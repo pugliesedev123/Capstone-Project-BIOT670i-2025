@@ -1,0 +1,21 @@
+# Ignore local-only folders (kept on disk, not pushed)
+data/
+.ruff_cache/
+example_images/
+
+# Python noise
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Env and secrets
+.env
+*.env
+
+# Ignore specific files
+Training Set Directory Structure.txt
+evaluate_model.py
+class_names.json
+fossil_resnet18.pt
+convert_heics.py
+sync_training_folders.py
