@@ -1,0 +1,81 @@
+TRAINING-README.txt
+
+Image Classifier Training Directory Structure
+=============================================
+
+This classifier expects a specific directory and file naming structure to ensure
+that ownership, taxonomic identity, and optional morphological metadata are clearly recorded.
+
+1. Owner Layer (required)
+-------------------------
+Top-level folder indicating data owner or contributor:
+
+    owner-[owner_name]
+
+Example:
+    owner-JSmith
+
+2. Taxon Layer (required for biological specimens)
+--------------------------------------------------
+Subfolder under each owner directory, representing the taxonomic identity.
+Use consistent taxon names across all owner folders.
+
+    taxon-[taxon_name]
+
+Accepted values include species, genus, family, etc.
+
+Example:
+    owner-JSmith/
+        taxon-Carcharhinus_leucas/
+
+3. Image Files (required for training)
+--------------------------------------
+Individual image files inside each taxon or mineral folder should be named with an index in parentheses:
+
+    [taxon_or_mineral_name] (1).jpg
+    [taxon_or_mineral_name] (2).jpg
+    ...
+
+This ensures consistency and compatibility with the classifier's input structure.
+
+If available, additional metadata such as tooth position or age may be tracked externally or in a separate documentation file.
+
+4. Mineral Layer (optional)
+---------------------------
+To support classification of common associated minerals, folders may be labeled using:
+
+    mineral-[mineral_name]
+
+These folders contain mineral image files and are treated separately from biological taxonomy.
+
+Example:
+    owner-JSmith/
+        mineral-quartz/
+            quartz (1).jpg
+        mineral-pyrite/
+            pyrite (1).jpg
+
+Mineral files may also appear within biological taxon folders if associated directly with a specimen:
+
+    caracharhinus_leucas (1).jpg
+    pyrite (1).jpg
+
+Example Structure:
+------------------
+    owner-JSmith/
+        taxon-Carcharhinus_leucas/
+            caracharhinus_leucas (1).jpg
+            caracharhinus_leucas (2).jpg
+            caracharhinus_leucas (3).jpg
+            pyrite (1).jpg
+
+        mineral-quartz/
+            quartz (1).jpg
+
+Summary Notes:
+--------------
+- Use snake_case or lowercase formatting.
+- Avoid spaces and special characters in folder and file names.
+- Taxon names must be used consistently across all owner folders.
+- Image files must use the (1), (2), ... format.
+- Morphotype and mineral metadata may be tracked separately in documentation.
