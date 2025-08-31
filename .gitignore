@@ -2,6 +2,7 @@
 data/
 .ruff_cache/
 example_images/
+example/
 
 # Python noise
 __pycache__/
