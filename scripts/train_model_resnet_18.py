@@ -12,7 +12,7 @@ import random
 from PIL import Image
 import torchvision.transforms.functional as F
 
-# Function to pad an image to a square
+
 def pad_to_square(img: Image.Image):
     w, h = img.size
     max_side = max(w, h)
@@ -20,6 +20,7 @@ def pad_to_square(img: Image.Image):
     pad_h = (max_side - h) // 2
     padding = (pad_w, pad_h, max_side - w - pad_w, max_side - h - pad_h)
     return F.pad(img, padding, fill=0, padding_mode='constant')
+
 
 # Parse Command Line Arguments
 parser = argparse.ArgumentParser(description='Train fossil image classifier')
@@ -93,6 +94,16 @@ if not os.path.exists(train_dir):
     raise FileNotFoundError(f"Training directory not found: {train_dir}")
 if not os.path.exists(val_dir):
     raise FileNotFoundError(f"Validation directory not found: {val_dir}")
+
+# NEW: Fail if any val folder is empty
+for class_folder in os.listdir(val_dir):
+    class_path = os.path.join(val_dir, class_folder)
+    if not os.path.isdir(class_path):
+        continue
+    images = [f for f in os.listdir(class_path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+    if not images:
+        raise RuntimeError(f"[ERROR] Validation folder {class_path} is empty!")
+
 
 # Transforms
 train_transforms = transforms.Compose([

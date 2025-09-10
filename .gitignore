@@ -2,7 +2,9 @@
 data/
 .ruff_cache/
 example_images/
+old_example/
 example/
+output/
 
 # Python noise
 __pycache__/
@@ -17,6 +19,4 @@ __pycache__/
 models/class_names.json
 models/fossil_resnet18.pt
 scripts/evaluate_model.py
-utils/convert_heics.py
 utils/sync_training_folders.py
-

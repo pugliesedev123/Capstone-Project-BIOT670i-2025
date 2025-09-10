@@ -15,6 +15,7 @@ known_mobile_dims = {
     (4080, 3072), (3072, 4080)
 }
 
+
 def crop_center_if_mobile(img: Image.Image) -> Image.Image:
     w, h = img.size
     if (w, h) in known_mobile_dims:
@@ -27,6 +28,8 @@ def crop_center_if_mobile(img: Image.Image) -> Image.Image:
     return img
 
 # Function to pad an image to a square
+
+
 def pad_to_square(img: Image.Image):
     w, h = img.size
     max_side = max(w, h)
@@ -35,17 +38,31 @@ def pad_to_square(img: Image.Image):
     padding = (pad_w, pad_h, max_side - w - pad_w, max_side - h - pad_h)
     return F.pad(img, padding, fill=0, padding_mode='constant')
 
+# Apply your standard pre-resize to keep outputs consistent with augment()
+
+
+def preprocess(img: Image.Image) -> Image.Image:
+    img = pad_to_square(img)
+    return img.resize((224, 224), Image.BICUBIC)
+
+
 augment = transforms.Compose([
-    transforms.Lambda(crop_center_if_mobile),         # Crop center square if mobile
-    transforms.Lambda(pad_to_square),                 # Pad if not already square
+    # transforms.Lambda(crop_center_if_mobile),         # Crop center square if mobile
+    # Pad if not already square
+    transforms.Lambda(pad_to_square),
     transforms.Resize((224, 224)),                    # Resize to square
     transforms.RandomRotation(9),
     transforms.RandomAffine(degrees=0, shear=5),
-    transforms.ColorJitter(brightness=0.06, contrast=0.06, saturation=0.04, hue=0.01),
-    transforms.RandomGrayscale(p=0.1),                                                  # Occasionally convert to grayscale (10% of the time)
-    transforms.ColorJitter(brightness=0.02, contrast=0.02, saturation=0.02, hue=0.02),  # Additional subtle color shift, possibly redundant
+    transforms.ColorJitter(brightness=0.06, contrast=0.06,
+                           saturation=0.04, hue=0.01),
+    # Occasionally convert to grayscale (10% of the time)
+    transforms.RandomGrayscale(p=0.1),
+    # Additional subtle color shift, possibly redundant
+    transforms.ColorJitter(brightness=0.02, contrast=0.02,
+                           saturation=0.02, hue=0.02),
     transforms.ToTensor(),
-    transforms.Lambda(lambda x: x + 0.005 * torch.randn_like(x)),  # Add light noise
+    transforms.Lambda(lambda x: x + 0.005 *
+                      torch.randn_like(x)),  # Add light noise
     transforms.RandomErasing(p=0.1, scale=(0.01, 0.04)),
 ])
 
@@ -91,32 +108,58 @@ for taxon_name, paths in taxon_to_paths.items():
     if not combined_images:
         continue
 
-    random.shuffle(combined_images)
-    split_idx = len(combined_images) // 5
-    val_images = combined_images[:split_idx]
-    train_images = combined_images[split_idx:]
+    # No split: originals are the validation set, and we augment the same originals for training
+    val_images = combined_images
+    train_images = combined_images
 
     aug_taxon_dir = os.path.join(aug_root, taxon_name)
     val_taxon_dir = os.path.join(val_root, taxon_name)
     os.makedirs(aug_taxon_dir, exist_ok=True)
     os.makedirs(val_taxon_dir, exist_ok=True)
 
-    # Save validation images (unaltered, crop on mobile images)
+    # Save validation images (unaltered originals)
     for img_path in val_images:
         try:
-            img = crop_center_if_mobile(Image.open(img_path).convert('RGB'))
             filename = os.path.basename(img_path)
-            img.save(os.path.join(val_taxon_dir, filename))
+            shutil.copy2(img_path, os.path.join(val_taxon_dir, filename))
         except Exception as e:
-            print(f"Failed to process validation image {img_path}: {e}")
+            print(f"Failed to copy validation image {img_path}: {e}")
 
-    # Augment training images
+    # Augment training images from originals
     for idx, img_path in enumerate(tqdm(train_images, desc=f"Augmenting {taxon_name}", unit="img")):
         try:
             img = Image.open(img_path).convert('RGB')
-            for i in range(20):  # 20 augmentations per image
+
+            # --- Baseline outputs that must exist ---
+            # 1) Grayscale version
+            g = preprocess(img.convert('L').convert('RGB'))
+            g.save(os.path.join(aug_taxon_dir, f"{idx}_base_gray.png"))
+
+            # 2) Background-removed placeholder (pass-through for now)
+            # TODO: Replace 'img' with a real background-removed image
+            rb = preprocess(img)
+            rb.save(os.path.join(aug_taxon_dir, f"{idx}_base_bgclean.png"))
+
+            # 3) Grayscale of background-removed
+            rb_g = preprocess(rb.convert('L').convert('RGB'))
+            rb_g.save(os.path.join(aug_taxon_dir,
+                      f"{idx}_base_bgclean_gray.png"))
+
+            fixed_count = 3
+
+            # 4) Zoom-in if mobile
+            if img.size in known_mobile_dims:
+                z = preprocess(crop_center_if_mobile(img))
+                z.save(os.path.join(aug_taxon_dir,
+                       f"{idx}_base_mobile_zoom.png"))
+                fixed_count = 4
+
+            # --- Fill the rest up to 20 total outputs with random augmentations ---
+            needed = 20 - fixed_count
+            for i in range(needed):
                 augmented = augment(img)
-                save_path = os.path.join(aug_taxon_dir, f"{idx}_{i}.png")
+                save_path = os.path.join(aug_taxon_dir, f"{idx}_rand_{i}.png")
                 transforms.ToPILImage()(augmented).save(save_path)
+
         except Exception as e:
             print(f"Failed to process training image {img_path}: {e}")
