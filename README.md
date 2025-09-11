@@ -113,13 +113,26 @@ After preprocessing and training, you will have:
 
 ## Predict on New Images or Folders
 
-After training, classify new fossils using `predict.py`.
+After training, classify new fossils using `predict_image.py`.
 
 ### Predict on a folder of example images
 
 ```bash
-python predict.py
+python predict_image.py \\
+  --example-dir example_images \\
+  --topn 3 \\
+  --model-path models/fossil_resnet18.pt \\
+  --class-names models/class_names.json \\
+  --output-dir output
 ```
+
+### Arguments
+
+- `--example-dir` Path to the folder containing example images (recursively processed).  
+- `--top-predictions` Number of top predictions to record (default: 3).  
+- `--model-path` Path to the model weights `.pt` file (default: `models/fossil_resnet18.pt`).  
+- `--class-names` Path to `class_names.json` (default: `models/class_names.json`).  
+- `--output-dir` Directory where the CSV of predictions will be saved (default: `output`).  
 
 ### Example output
 
@@ -135,6 +148,8 @@ example_images/bivalve.png
   3. Exogyra costata (12.77%)
 ```
 
+The script also writes predictions to a timestamped CSV in the specified `--output-dir`.
+
 ---
 
 ## Recommended Workflow
@@ -145,7 +160,7 @@ example_images/bivalve.png
    Expand training data with image transformations and create a proper validation set.  
 3. **Train model → `train_model.py`**  
    Fine-tune a ResNet-18 on your fossil images, saving weights and class labels.  
-4. **Predict on new or example fossils → `predict.py`**  
+4. **Predict on new or example fossils → `predict_image.py`**  
    Run the trained model on fresh images to get top predictions with confidence scores.  
 
 
