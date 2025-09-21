@@ -8,32 +8,33 @@ import json
 import csv
 from pathlib import Path
 
-# Define device  
+# Define device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Class names  
+# Class names
 with open("models/class_names.json", "r") as f:
     class_names = json.load(f)
 
-# Load model  
-model = models.resnet18()
+# Load model
+model = models.resnet50()
 model.fc = nn.Linear(model.fc.in_features, len(class_names))  # Adjust dynamically
-model.load_state_dict(torch.load('models/fossil_resnet18.pt', map_location=device))
+model.load_state_dict(torch.load('models/fossil_resnet50.pt', map_location=device))
 model = model.to(device)
 model.eval()
 
-# Define transforms  
+# Define transforms
 transform = transforms.Compose([
     transforms.Resize((128, 128)),
     transforms.ToTensor(),
-    transforms.Normalize([0.5]*3, [0.5]*3)
+    transforms.Normalize([0.5] * 3, [0.5] * 3)
 ])
 
-# Predict all images in folder  
+# Predict all images in folder
 example_dir = 'example_images'
 image_files = [f for f in os.listdir(example_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
 
-MODEL_NAME = "resnet-18" # will be set to indicated model per run
+# The following step is not yet necessary, but lays foundation for an integrated predict script with multiple models
+MODEL_NAME = "resnet-50" # will be set to indicated model per run
 
 project_root = Path(__file__).resolve().parent.parent
 out_dir = project_root / "prediction_results"
@@ -52,7 +53,6 @@ with csv_path.open("w", newline='', encoding='utf-8') as csvfile:
         img = transform(img).unsqueeze(0).to(device)
 
         top_n = 3  # Number of predictions to show
-
         with torch.no_grad():
             output = model(img)
             probabilities = F.softmax(output, dim=1)
@@ -72,4 +72,4 @@ with csv_path.open("w", newline='', encoding='utf-8') as csvfile:
             #writes to csv file
             writer.writerow([file, rank, predicted_class, round(confidence_pct, 2)])
 
-    print(f"\nThese prediction results are now stored in {csv_path}\n\n")
+    print(f"\nThese prediction results are now stored in {csv_path}\n")

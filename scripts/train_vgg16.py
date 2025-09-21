@@ -11,6 +11,7 @@ import shutil
 import random
 from PIL import Image
 import torchvision.transforms.functional as F
+from torchvision.models import vgg16, VGG16_Weights
 
 # Function to pad an image to a square
 def pad_to_square(img: Image.Image):
@@ -137,18 +138,23 @@ else:
 
 print(f"[INFO] Using device: {device}")
 
-model = models.resnet18(pretrained=True)
+model = vgg16(weights=VGG16_Weights.DEFAULT)
 
-print("[INFO] Loaded pretrained ResNet-18")
+print("[INFO] Loaded pretrained VGG-16")
 
-model.fc = nn.Linear(model.fc.in_features, len(train_data.classes))
-print(f"[INFO] Updated final layer for {len(train_data.classes)} classes")
+#number of classes
+num_classes = len(train_data.classes)
+
+in_features = model.classifier[-1].in_features
+model.classifier[-1] = nn.Linear(in_features, num_classes)
+
+print(f"[INFO] Updated final layer for {num_classes} classes")
 
 model = model.to(device)
 print("[INFO] Model moved to device")
 
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.fc.parameters(), lr=0.001)
+optimizer = optim.Adam(model.classifier[-1].parameters(), lr=0.001)
 print("[INFO] Optimizer and loss function initialized")
 
 print("[INFO] Starting training loop...")
@@ -191,5 +197,5 @@ for epoch in range(5):
           f"Time: {int(epoch_time // 60)}m {int(epoch_time % 60)}s")
 
 # Save Model
-torch.save(model.state_dict(), 'models/fossil_resnet18.pt')
-print("Model saved to models/fossil_resnet18.pt")
+torch.save(model.state_dict(), 'models/fossil_vgg16.pt')
+print("Model saved to models/fossil_vgg16.pt")

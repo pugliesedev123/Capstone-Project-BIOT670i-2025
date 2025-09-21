@@ -137,9 +137,9 @@ else:
 
 print(f"[INFO] Using device: {device}")
 
-model = models.resnet18(pretrained=True)
+model = models.resnet50(pretrained=True)
 
-print("[INFO] Loaded pretrained ResNet-18")
+print("[INFO] Loaded pretrained ResNet-50")
 
 model.fc = nn.Linear(model.fc.in_features, len(train_data.classes))
 print(f"[INFO] Updated final layer for {len(train_data.classes)} classes")
@@ -191,5 +191,5 @@ for epoch in range(5):
           f"Time: {int(epoch_time // 60)}m {int(epoch_time % 60)}s")
 
 # Save Model
-torch.save(model.state_dict(), 'models/fossil_resnet18.pt')
-print("Model saved to models/fossil_resnet18.pt")
+torch.save(model.state_dict(), 'models/fossil_resnet50.pt')
+print("Model saved to models/fossil_resnet50.pt")

@@ -54,6 +54,11 @@ input_root = 'data/train'
 val_root = 'data/val/owner-combined'
 aug_root = 'data/augmented/owner-combined'
 
+#input_root = r"C:\Users\bryan\PycharmProjects\Capstone-Project-BIOT670i-2025\data\train"
+#val_root = r"C:\Users\bryan\PycharmProjects\Capstone-Project-BIOT670i-2025\data\val"
+#aug_root = r"C:\Users\bryan\PycharmProjects\Capstone-Project-BIOT670i-2025\data\augmented"
+
+
 # Optional cleanup
 for folder in ['data/val', 'data/augmented']:
     if os.path.exists(folder):
