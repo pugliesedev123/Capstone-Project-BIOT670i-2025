@@ -32,6 +32,98 @@ def pad_to_square(img: Image.Image):
     # Fill uses black here. You can change this if desired.
     return F.pad(img, padding, fill=0, padding_mode='constant')
 
+def unique_path(path: str) -> str:
+    if not os.path.exists(path):
+        return path
+    root, ext = os.path.splitext(path)
+    i = 1
+    cand = f"{root}_{i}{ext}"
+    while os.path.exists(cand):
+        i += 1
+        cand = f"{root}_{i}{ext}"
+    return cand
+
+IMAGE_EXTS = (".png", ".jpg", ".jpeg")
+
+def ensure_min_val_samples(train_dir: str, val_dir: str, min_per_class: int = 1):
+    os.makedirs(val_dir, exist_ok=True)
+    for img_class in sorted(d for d in os.listdir(train_dir) if os.path.isdir(os.path.join(train_dir, d))):
+        timg_class = os.path.join(train_dir, img_class)
+        vimg_class = os.path.join(val_dir, img_class)
+        os.makedirs(vimg_class, exist_ok=True)
+        val_imgs = [f for f in os.listdir(vimg_class) if f.lower().endswith(IMAGE_EXTS)]
+        if len(val_imgs) >= min_per_class:
+            continue
+        train_imgs = [f for f in os.listdir(timg_class) if f.lower().endswith(IMAGE_EXTS)]
+        if not train_imgs:
+            continue
+        random.shuffle(train_imgs)
+        need = min_per_class - len(val_imgs)
+        for f in train_imgs[:need]:
+            src = os.path.join(timg_class, f)
+            dst = os.path.join(vimg_class, f)
+            dst = unique_path(dst)
+            shutil.copy2(src, dst)
+
+# --- Helper to build combined train and move split into val without touching data/train ---
+def build_combined_and_val(source_root: str, combined_train_dir: str, val_dir: str, min_total_per_class: int = 20, split_frac: float = 0.25):
+    # Clean rebuild
+    if os.path.exists(combined_train_dir):
+        print(f"[CLEAN] Removing existing directory: {combined_train_dir}")
+        shutil.rmtree(combined_train_dir)
+    if os.path.exists(val_dir):
+        print(f"[CLEAN] Removing existing directory: {val_dir}")
+        shutil.rmtree(val_dir)
+
+    os.makedirs(combined_train_dir, exist_ok=True)
+    os.makedirs(val_dir, exist_ok=True)
+
+    # Gather all images by class across owner-* folders
+    class_to_paths = {}
+    for owner in os.listdir(source_root):
+        owner_path = os.path.join(source_root, owner)
+        if not (os.path.isdir(owner_path) and owner.startswith("owner-")):
+            continue
+        for img_class in os.listdir(owner_path):
+            img_class_path = os.path.join(owner_path, img_class)
+            if not os.path.isdir(img_class_path):
+                continue
+            imgs = [os.path.join(img_class_path, f) for f in os.listdir(img_class_path)
+                    if f.lower().endswith(IMAGE_EXTS)]
+            if imgs:
+                class_to_paths.setdefault(img_class, []).extend(imgs)
+
+    # Copy to combined, then move split to val
+    for img_class, paths in sorted(class_to_paths.items()):
+        total = len(paths)
+        if total < min_total_per_class:
+            print(f"[SKIP] Class '{img_class}' has only {total} images (need ≥ {min_total_per_class})")
+            continue
+
+        random.shuffle(paths)
+        train_img_class_dir = os.path.join(combined_train_dir, img_class)
+        val_img_class_dir = os.path.join(val_dir, img_class)
+        os.makedirs(train_img_class_dir, exist_ok=True)
+        os.makedirs(val_img_class_dir, exist_ok=True)
+
+        copied_files = []
+        for src in paths:
+            base = os.path.basename(src)
+            dst = unique_path(os.path.join(train_img_class_dir, base))
+            shutil.copy2(src, dst)
+            copied_files.append(dst)
+
+        move_k = int(len(copied_files) * split_frac)
+        if move_k > 0:
+            random.shuffle(copied_files)
+            to_move = copied_files[:move_k]
+            for p in to_move:
+                dst = unique_path(os.path.join(val_img_class_dir, os.path.basename(p)))
+                shutil.move(p, dst)
+
+        print(f"[INFO] Class '{img_class}': total={total}, moved_to_val={move_k}, "
+              f"remaining_train={len(copied_files) - move_k}")
+
 def main():
         
     # Command-Line Arguments
@@ -47,9 +139,9 @@ def main():
     # Apply seed as early as possible so all randomness is controlled
     set_seed(args.seed)
 
-    # ---------------- PATCHED: Directory Setup ----------------
+    # ---------------- Directory Setup ----------------
     # If using augmented, look for merged data in data/augmented/owner-combined
-    # If not using augmented, still WRITE the merged owner-combined into data/augmented/owner-combined,
+    # If not using augmented, still write the merged owner-combined into data/augmented/owner-combined,
     # but READ sources from data/train/owner-*
     if args.use_augmented:
         source_root = 'data/augmented'   # not used for merging below
@@ -62,68 +154,16 @@ def main():
 
     # Rebuild owner-combined from scratch when using the original dataset
     # This merges all owner-* folders from data/train into data/augmented/owner-combined
+    # and then MOVES floor(N/4) to data/val/owner-combined to avoid leakage.
     if not args.use_augmented:
-        if os.path.exists(train_dir):
-            print(f"[CLEAN] Removing existing directory: {train_dir}")
-            shutil.rmtree(train_dir)
-
-        print(f"[INFO] Merging owner-* folders from {source_root} into: {train_dir}")
-        os.makedirs(train_dir, exist_ok=True)
-
-        # Walk each owner folder, then each taxon subfolder, and copy images into combined layout
-        for owner_folder in os.listdir(source_root):
-            owner_path = os.path.join(source_root, owner_folder)
-            if not os.path.isdir(owner_path) or not owner_folder.startswith('owner-'):
-                continue
-
-            for taxon_folder in os.listdir(owner_path):
-                taxon_path = os.path.join(owner_path, taxon_folder)
-                if not os.path.isdir(taxon_path):
-                    continue
-
-                # Accept common image formats
-                valid_images = [
-                    f for f in os.listdir(taxon_path)
-                    if f.lower().endswith(('.png', '.jpg', '.jpeg'))
-                ]
-                if not valid_images:
-                    print(f"[SKIP] {taxon_path} has no valid images.")
-                    continue
-
-                # Make class folder in the combined train directory
-                dest_path = os.path.join(train_dir, taxon_folder)
-                os.makedirs(dest_path, exist_ok=True)
-
-                # Copy images and prefix filenames with owner name to avoid clashes
-                for img_file in valid_images:
-                    src = os.path.join(taxon_path, img_file)
-                    base_name = f"{owner_folder}_{img_file}"
-                    dst = os.path.join(dest_path, base_name)
-                    shutil.copyfile(src, dst)
-
-    # Create val set once when it does not exist and we are using the original dataset
-    # This takes a small slice from each class for validation
-    if not os.path.exists(val_dir) and not args.use_augmented:
-        os.makedirs(val_dir, exist_ok=True)
-        for class_folder in os.listdir(train_dir):
-            input_class_path = os.path.join(train_dir, class_folder)
-            val_class_path = os.path.join(val_dir, class_folder)
-
-            if not os.path.isdir(input_class_path):
-                continue
-
-            os.makedirs(val_class_path, exist_ok=True)
-            images = [f for f in os.listdir(
-                input_class_path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-            random.shuffle(images)  # random split per class
-            split_idx = len(images) // 5  # 20 percent to validation
-            val_images = images[:split_idx]
-
-            # Copy chosen images into the validation folder
-            for img_file in val_images:
-                src_path = os.path.join(input_class_path, img_file)
-                dst_path = os.path.join(val_class_path, img_file)
-                shutil.copyfile(src_path, dst_path)
+        print(f"[INFO] Building combined train and val from {source_root}")
+        build_combined_and_val(
+            source_root=source_root,
+            combined_train_dir=train_dir,
+            val_dir=val_dir,
+            min_total_per_class=20,   # Eligibility threshold
+            split_frac=0.25           # Move floor(N/4) to val
+        )
 
     # Validate that train and val folders exist
     if not os.path.exists(train_dir):
@@ -161,7 +201,7 @@ def main():
         transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
     ])
 
-    # Load Data
+    # Load Data, the training set comes from data/augmented/owner-combined not the original training folders.
     train_data = datasets.ImageFolder(train_dir, transform=train_transforms)
     val_data = datasets.ImageFolder(val_dir, transform=val_transforms)
 
@@ -260,7 +300,7 @@ def main():
 
     # This builds a lookup table from training images to their feature vectors
     # Later you can find the nearest training image to a new query image
-    print("[INFO] Building training embedding index...")
+    print("[INFO] Building training embedding index]...")
 
     # Create an embedder that outputs 512-length features by removing the final layer
     embedder = models.resnet18(pretrained=False)
