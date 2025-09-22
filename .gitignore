@@ -17,6 +17,7 @@ __pycache__/
 
 # Ignore specific files
 models/class_names.json
+models/train_index.pt
 models/fossil_resnet18.pt
 scripts/evaluate_model.py
 utils/sync_training_folders.py
