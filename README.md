@@ -3,7 +3,7 @@
 In this project, we train neural networks to classify fossil images from across the Eastern United States, spanning the Cretaceous beds of New Jersey to the diverse coastal deposits of Maryland, the Carolinas, and Florida.  
 
 We provide a Python toolkit for:
-- **Image preprocessing and augmentation** (crop, pad, rotate, zoom, flips, etc.)
+- **Image preprocessing and augmentation** (crop, colourize, rotate, zoom, flips, etc.)
 - **ResNet-18 training** with class imbalance handling
 - **Prediction** on new images with nearest-neighbor lookups to training examples  
 
@@ -205,13 +205,12 @@ The script also writes predictions and nearest neighbor results to a timestamped
 
 ### Why nearest neighbors matter
 
-Alongside top class predictions, the script also shows **nearest neighbors** from the training dataset based on feature similarity.  
-This helps you:
+Alongside top class predictions, the script also shows **nearest neighbors** from the training dataset based on feature similarity. This helps you:
 - See which training fossils most influenced the model’s decision  
 - Spot potential misclassifications (if the nearest examples look wrong)  
 - Build confidence in the prediction by comparing to actual known fossils  
 
-In short, nearest neighbors provide **transparent, human-checkable evidence** for each classification.  
+In short, nearest neighbors provide transparency into each decision classification.  
 
 ---
 
