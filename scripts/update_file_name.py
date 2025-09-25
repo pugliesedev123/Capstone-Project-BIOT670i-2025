@@ -1,3 +1,7 @@
+##IN DEVELOPMENT, DON'T USE FOR NOW. 9/24/2025
+
+
+
 import os, shutil, re
 
 ##input an owner folder as the parent folder and script will iterate through the folder to rename files not of the correct naming convention
