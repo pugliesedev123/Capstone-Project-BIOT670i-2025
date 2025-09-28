@@ -34,6 +34,7 @@ with open(f"{owner}_file_changes.csv", "w") as f:
             num = len(os.listdir())
 
             #convert all files to jpg
+            #change x to a different number if you want to start at a higher number since files already exist in folder
             x = 1
             track_name = {}
             for file in os.listdir():
