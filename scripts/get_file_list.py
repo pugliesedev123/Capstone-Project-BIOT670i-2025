@@ -4,16 +4,20 @@ print("This script will output a csv file with two columns: a directory column a
 print("It will also remove empty taxon folders from the existing owner\\* subfolders")
 
 #For Mac
-path = "data/train"
-pattern = re.compile(r"[\s\S]*/data/train/")
-output = "Directory_File_output.csv"
+#user_path = "data/train"
+#pattern = re.compile(r"[\s\S]*/data/train/")
+#output = "Directory_File_output.csv"
 
 #For Windows
-#path = "data\\train"
+#user_path = "data\\train"
 #pattern = re.compile(r"[\s\S]*\\data\\train\\")
 #output = "data\\Folders_output.txt"
 
-os.chdir(path)
+#Just paste the file path
+user_path = input("Paste path of directory to get contents")
+
+
+os.chdir(user_path)
 
 with open(output, "w") as o:
     for folder in os.listdir():
