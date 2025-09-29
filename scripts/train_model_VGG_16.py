@@ -21,7 +21,6 @@ def set_seed(seed: int):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
 
-
 def pad_to_square(img: Image.Image):
     # Add padding so width equals height
     # This centers the original image in a square canvas
@@ -32,7 +31,6 @@ def pad_to_square(img: Image.Image):
     padding = (pad_w, pad_h, max_side - w - pad_w, max_side - h - pad_h)
     # Fill uses black here. You can change this if desired.
     return F.pad(img, padding, fill=0, padding_mode='constant')
-
 
 def unique_path(path: str) -> str:
     if not os.path.exists(path):
@@ -45,9 +43,7 @@ def unique_path(path: str) -> str:
         cand = f"{root}_{i}{ext}"
     return cand
 
-
 IMAGE_EXTS = (".png", ".jpg", ".jpeg")
-
 
 def ensure_min_val_samples(train_dir: str, val_dir: str, min_per_class: int = 1):
     os.makedirs(val_dir, exist_ok=True)
@@ -69,10 +65,8 @@ def ensure_min_val_samples(train_dir: str, val_dir: str, min_per_class: int = 1)
             dst = unique_path(dst)
             shutil.copy2(src, dst)
 
-
 # --- Helper to build combined train and move split into val without touching data/train ---
-def build_combined_and_val(source_root: str, combined_train_dir: str, val_dir: str, min_total_per_class: int = 20,
-                           split_frac: float = 0.25):
+def build_combined_and_val(source_root: str, combined_train_dir: str, val_dir: str, min_total_per_class: int = 20, split_frac: float = 0.25):
     # Clean rebuild
     if os.path.exists(combined_train_dir):
         print(f"[CLEAN] Removing existing directory: {combined_train_dir}")
@@ -130,18 +124,18 @@ def build_combined_and_val(source_root: str, combined_train_dir: str, val_dir: s
         print(f"[INFO] Class '{img_class}': total={total}, moved_to_val={move_k}, "
               f"remaining_train={len(copied_files) - move_k}")
 
-
 def main():
+        
     # Command-Line Arguments
     parser = argparse.ArgumentParser(description='Train fossil image classifier')
     parser.add_argument('--use-augmented', action='store_true', help='Use augmented dataset')
+    parser.add_argument("--console-print", action='store_true', help="Print extra details to console")
+    parser.add_argument('--use-pre-train', type=bool, default=True, help='Use pre-trained model')
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
     parser.add_argument('--batch-size', type=int, default=16, help='Batch size')
     parser.add_argument('--epochs', type=int, default=5, help='Number of training epochs')
-    parser.add_argument('--model-path', type=str, default='models/fossil_resnet18.pt',
-                        help='Path to save model weights')
-    parser.add_argument('--index-path', type=str, default='models/train_index.pt',
-                        help='Path to save training embedding index')
+    parser.add_argument('--model-path', type=str, default='models/fossil_vgg16.pt', help='Path to save model weights')
+    parser.add_argument('--index-path', type=str, default='models/train_index_vgg16.pt', help='Path to save training embedding index')
     args = parser.parse_args()
 
     # Apply seed as early as possible so all randomness is controlled
@@ -152,25 +146,25 @@ def main():
     # If not using augmented, still write the merged owner-combined into data/augmented/owner-combined,
     # but READ sources from data/train/owner-*
     if args.use_augmented:
-        source_root = 'data/augmented'  # not used for merging below
+        source_root = 'data/augmented'   # not used for merging below
         train_dir = os.path.join('data/augmented', 'owner-combined')
     else:
-        source_root = 'data/train'  # where owner-* live
+        source_root = 'data/train'       # where owner-* live
         train_dir = os.path.join('data/augmented', 'owner-combined')
 
     val_dir = 'data/val/owner-combined'
 
     # Rebuild owner-combined from scratch when using the original dataset
     # This merges all owner-* folders from data/train into data/augmented/owner-combined
-    # and then MOVES floor(N/4) to data/val/owner-combined to avoid leakage.
+    # and then MOVES floor (N/4) to data/val/owner-combined to avoid leakage.
     if not args.use_augmented:
         print(f"[INFO] Building combined train and val from {source_root}")
         build_combined_and_val(
             source_root=source_root,
             combined_train_dir=train_dir,
             val_dir=val_dir,
-            min_total_per_class=20,  # Eligibility threshold
-            split_frac=0.25  # Move floor(N/4) to val
+            min_total_per_class=20,   # Eligibility threshold
+            split_frac=0.25           # Move floor(N/4) to val
         )
 
     # Validate that train and val folders exist
@@ -225,29 +219,35 @@ def main():
     # Normalization so average weight is near 1
     class_weights = class_weights / class_weights.sum() * len(class_weights)
 
-    print("[INFO] Class counts:", class_counts.tolist())
-    print("[INFO] Class weights:", class_weights.tolist())
+    if(args.console_print):
+        print("[INFO] Class counts:", class_counts.tolist())
+        print("[INFO] Class weights:", class_weights.tolist())
 
     # Save class names next to the model path for later use by the predictor
     os.makedirs(os.path.dirname(args.model_path) or ".", exist_ok=True)
-    with open(os.path.join(os.path.dirname(args.model_path) or ".", "class_names.json"), "w") as f:
-        json.dump(train_data.classes, f)
+    with open(os.path.join(os.path.dirname(args.model_path) or ".", "class_names.json"), "w") as f: json.dump(train_data.classes, f)
 
     # Pick GPU if available, else CPU
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    print(f"[INFO] Using device: {device}")
-    if device.type == 'cuda':
-        print(f"[INFO] CUDA device: {torch.cuda.get_device_name(0)}")
-    else:
-        print("[WARN] GPU not detected - training on CPU will be slow.")
+    if(args.console_print):
+        print(f"[INFO] Using device: {device}")
+        if device.type == 'cuda':
+            print(f"[INFO] CUDA device: {torch.cuda.get_device_name(0)}")
+        else:
+            print("[WARN] GPU not detected - training on CPU will be slow.")
 
-    # Load a ResNet-18 with pretrained weights to get a strong starting point
-    model = models.resnet18(pretrained=True)
-    print("[INFO] Loaded pretrained ResNet-18")
+    # Load a VGG-16 with pretrained weights to get a strong starting point
+    model = models.vgg16(pretrained=args.use_pre_train)
+    if(args.use_pre_train):
+        print("[INFO] Loaded pretrained VGG16")
+
+    #VGG 
+    in_features = model.classifier[-1].in_features
+    model.classifier[-1] = nn.Linear(in_features, int(len(class_counts)))
 
     # Replace the final layer to match the number of fossil classes
-    model.fc = nn.Linear(model.fc.in_features, len(train_data.classes))
+    # model.fc = nn.Linear(model.fc.in_features, len(train_data.classes))
     print(f"[INFO] Updated final layer for {len(train_data.classes)} classes")
 
     # Move model to device
@@ -256,8 +256,9 @@ def main():
 
     # Use weighted cross entropy to handle class imbalance
     criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
+
     # Train only the final layer for now to keep things simple and fast
-    optimizer = optim.Adam(model.fc.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.classifier[-1].parameters(), lr=0.001)
     print("[INFO] Optimizer and loss function initialized")
 
     print("[INFO] Starting training loop...")
@@ -269,10 +270,10 @@ def main():
         total = 0
         start_time = time.time()
 
-        print(f"\n[INFO] Starting Epoch {epoch + 1}/{args.epochs}...")
+        print(f"\n[INFO] Starting Epoch {epoch+1}/{args.epochs}...")
 
         # Wrap the loader with a progress bar for live feedback
-        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch + 1}", unit="batch")
+        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}", unit="batch")
 
         for batch_idx, (images, labels) in enumerate(progress_bar):
             images, labels = images.to(device), labels.to(device)
@@ -297,10 +298,10 @@ def main():
             progress_bar.set_postfix({'Loss': f"{avg_loss:.4f}", 'Acc': f"{train_acc:.2f}%"})
 
         epoch_time = time.time() - start_time
-        print(f"[INFO] Epoch {epoch + 1} Complete | "
-              f"Loss: {running_loss:.4f} | "
-              f"Train Acc: {train_acc:.2f}% | "
-              f"Time: {int(epoch_time // 60)}m {int(epoch_time % 60)}s")
+        print(f"[INFO] Epoch {epoch+1} Complete | "
+            f"Loss: {running_loss:.4f} | "
+            f"Train Acc: {train_acc:.2f}% | "
+            f"Time: {int(epoch_time // 60)}m {int(epoch_time % 60)}s")
 
     # Save trained weights so you can load them later for prediction
     torch.save(model.state_dict(), args.model_path)
@@ -311,12 +312,12 @@ def main():
     print("[INFO] Building training embedding index]...")
 
     # Create an embedder that outputs 512-length features by removing the final layer
-    embedder = models.resnet18(pretrained=False)
-    embedder.fc = nn.Identity()
+    embedder = models.vgg16(pretrained=False)
+    model.classifier[-1] = nn.Identity()
 
     # Copy all trained weights except the final classifier layer
     state = model.state_dict()
-    state_no_fc = {k: v for k, v in state.items() if not k.startswith('fc.')}
+    state_no_fc = {k: v for k, v in state.items() if not k.startswith(f'classifier.{int(args.epochs) + 1}.')}
     missing, unexpected = embedder.load_state_dict(state_no_fc, strict=False)
     if missing:
         print(f"[INFO] Embedder missing keys: {missing}")
@@ -340,8 +341,8 @@ def main():
     with torch.no_grad():
         for imgs, labels in tqdm(index_loader, desc="Indexing", unit="batch"):
             imgs = imgs.to(device)
-            vecs = embedder(imgs)  # shape [B, 512]
-            vecs = torch.nn.functional.normalize(vecs, dim=1)  # unit length for cosine similarity
+            vecs = embedder(imgs)                                # shape [B, 512]
+            vecs = torch.nn.functional.normalize(vecs, dim=1)    # unit length for cosine similarity
             all_vecs.append(vecs.cpu())
             all_labels.extend(labels.tolist())
 
@@ -350,11 +351,11 @@ def main():
 
     # Package the index for saving
     index_obj = {
-        "embeddings": embeddings,  # FloatTensor [N, 512]
-        "labels": torch.tensor(all_labels),  # LongTensor [N]
-        "paths": all_paths,  # list[str]
-        "class_to_idx": class_to_idx,  # dict
-        "idx_to_class": idx_to_class,  # dict
+        "embeddings": embeddings,                 # FloatTensor [N, 512]
+        "labels": torch.tensor(all_labels),       # LongTensor [N]
+        "paths": all_paths,                       # list[str]
+        "class_to_idx": class_to_idx,             # dict
+        "idx_to_class": idx_to_class,             # dict
     }
 
     # Save the index for use by the prediction script

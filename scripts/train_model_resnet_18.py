@@ -129,11 +129,13 @@ def main():
     # Command-Line Arguments
     parser = argparse.ArgumentParser(description='Train fossil image classifier')
     parser.add_argument('--use-augmented', action='store_true', help='Use augmented dataset')
+    parser.add_argument("--console-print", action='store_true', help="Print extra details to console")
+    parser.add_argument('--use-pre-train', type=bool, default=True, help='Use pre-trained model')
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
     parser.add_argument('--batch-size', type=int, default=16, help='Batch size')
     parser.add_argument('--epochs', type=int, default=5, help='Number of training epochs')
     parser.add_argument('--model-path', type=str, default='models/fossil_resnet18.pt', help='Path to save model weights')
-    parser.add_argument('--index-path', type=str, default='models/train_index.pt', help='Path to save training embedding index')
+    parser.add_argument('--index-path', type=str, default='models/train_index_resnet18.pt', help='Path to save training embedding index')
     args = parser.parse_args()
 
     # Apply seed as early as possible so all randomness is controlled
@@ -154,7 +156,7 @@ def main():
 
     # Rebuild owner-combined from scratch when using the original dataset
     # This merges all owner-* folders from data/train into data/augmented/owner-combined
-    # and then MOVES floor(N/4) to data/val/owner-combined to avoid leakage.
+    # and then MOVES floor (N/4) to data/val/owner-combined to avoid leakage.
     if not args.use_augmented:
         print(f"[INFO] Building combined train and val from {source_root}")
         build_combined_and_val(
@@ -217,8 +219,9 @@ def main():
     # Normalization so average weight is near 1
     class_weights = class_weights / class_weights.sum() * len(class_weights)
 
-    print("[INFO] Class counts:", class_counts.tolist())
-    print("[INFO] Class weights:", class_weights.tolist())
+    if(args.console_print):
+        print("[INFO] Class counts:", class_counts.tolist())
+        print("[INFO] Class weights:", class_weights.tolist())
 
     # Save class names next to the model path for later use by the predictor
     os.makedirs(os.path.dirname(args.model_path) or ".", exist_ok=True)
@@ -227,15 +230,17 @@ def main():
     # Pick GPU if available, else CPU
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    print(f"[INFO] Using device: {device}")
-    if device.type == 'cuda':
-        print(f"[INFO] CUDA device: {torch.cuda.get_device_name(0)}")
-    else:
-        print("[WARN] GPU not detected - training on CPU will be slow.")
+    if(args.console_print):
+        print(f"[INFO] Using device: {device}")
+        if device.type == 'cuda':
+            print(f"[INFO] CUDA device: {torch.cuda.get_device_name(0)}")
+        else:
+            print("[WARN] GPU not detected - training on CPU will be slow.")
 
     # Load a ResNet-18 with pretrained weights to get a strong starting point
-    model = models.resnet18(pretrained=True)
-    print("[INFO] Loaded pretrained ResNet-18")
+    model = models.resnet18(pretrained=args.use_pre_train)
+    if(args.use_pre_train):
+        print("[INFO] Loaded pretrained ResNet-18")
 
     # Replace the final layer to match the number of fossil classes
     model.fc = nn.Linear(model.fc.in_features, len(train_data.classes))

@@ -33,7 +33,7 @@ transform = transforms.Compose([
 ])
 
 # Predict all images in folder
-example_dir = 'example_images'
+example_dir = 'example'
 image_files = [f for f in os.listdir(example_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
 
 MODEL_NAME = "vgg-16" # will be set to indicated model per run

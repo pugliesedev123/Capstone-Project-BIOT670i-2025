@@ -69,12 +69,15 @@ def norm_class_key(name: str) -> str:
 
 
 def main():
+        
+    # Command-Line Arguments
     parser = argparse.ArgumentParser(description="Combine owners into a single dataset, send 1/5 to val, and save augmented images for the rest")
     parser.add_argument("--input-root", default="data/train", help="Root with owner-* subdirectories")
     parser.add_argument("--val-root", default="data/val/owner-combined", help="Where to copy validation images")
     parser.add_argument("--aug-root", default="data/augmented/owner-combined", help="Where to save augmented images")
     parser.add_argument("--aug-per-image", type=int, default=3, help="How many augmented samples per training image")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for split and transforms")
+    parser.add_argument("--console-print", action='store_true', help="Print extra details to console")
     args = parser.parse_args()
 
     # Apply seed as early as possible so all randomness is controlled
@@ -171,12 +174,13 @@ def main():
                 except Exception as e:
                     print(f"Failed to augment {img_path}: {e}")
 
-    if skipped:
-        print("\nSkipped classes (fewer than 20 baseline images):")
-        for name, count in skipped:
-            print(f"  - {name}: {count} images")
-    else:
-        print("\nNo classes were skipped.")
+    if args.console_print:
+        if skipped:
+            print("\n[INFO] Skipped classes (fewer than 20 baseline images):")
+            for name, count in skipped:
+                print(f"  - {name}: {count} images")
+        else:
+            print("\n[INFO] No classes were skipped.")
 
 
 if __name__ == "__main__":
