@@ -42,8 +42,9 @@ def main():
     parser.add_argument("--neighbors", type=int, default=3, help="How many closest training images to record.")
     parser.add_argument("--model-path", default="models/fossil_resnet18.pt", help="Path to the trained model weights file.")
     parser.add_argument("--class-names", default="models/class_names.json", help="Path to class_names.json file.")
-    parser.add_argument("--index-path", default="models/train_index.pt", help="Path to the saved training feature index.")
+    parser.add_argument("--index-path", default="models/train_index_resnet18.pt", help="Path to the saved training feature index.")
     parser.add_argument("--output-dir", default="output", help="Folder where the CSV will be saved.")
+    parser.add_argument("--console-print", action='store_true', help="Print predictions to console")
     args = parser.parse_args()
 
     # Pick GPU if available, else CPU
@@ -130,9 +131,11 @@ def main():
             image_files = [f for f in files if is_image(f)]
             if not image_files:
                 continue
-
+            
             # Process each image in sorted order for stable output
+            print(f"[INFO] Processing Predictions...")
             for file in sorted(image_files):
+
                 img_path = os.path.join(root, file)
                 try:
                     img = Image.open(img_path).convert("RGB")  # ensure 3 channels
@@ -152,8 +155,9 @@ def main():
                 top_probs = top_probs[0].cpu().numpy()
                 top_indices = top_indices[0].cpu().numpy()
 
-                rel_path_for_print = os.path.relpath(img_path, args.example_dir)
-                print(f"\n{rel_path_for_print}:")
+                if(args.console_print):
+                    rel_path_for_print = os.path.relpath(img_path, args.example_dir)
+                    print(f"\n{rel_path_for_print}:")
 
                 # Start the CSV row with file name and parent folder name
                 row = [file, parent_folder]
@@ -162,7 +166,10 @@ def main():
                 for i in range(args.top_predictions):
                     predicted_class = class_names[top_indices[i]]   # map index to class name
                     confidence_pct = float(top_probs[i] * 100.0)    # show as percent
-                    print(f"{i+1}. {predicted_class} ({confidence_pct:.2f}% confidence)")
+
+                    if(args.console_print):
+                        print(f"{i+1}. {predicted_class} ({confidence_pct:.2f}% confidence)")
+                        
                     row += [predicted_class, f"{confidence_pct:.2f}"]
 
                 # 2) Find nearest neighbors from the training index
@@ -191,7 +198,7 @@ def main():
         writer.writerow(header)
         writer.writerows(rows)
 
-    print(f"\nSaved predictions to: {csv_path}")
+    print(f"[INFO] Saved predictions to: {csv_path}")
 
 
 if __name__ == "__main__":

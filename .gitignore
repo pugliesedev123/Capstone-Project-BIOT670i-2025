@@ -2,6 +2,11 @@
 data/
 .ruff_cache/
 example_images/
+old_example/
+example/
+output/
+models/
+prediction_results/
 
 # Python noise
 __pycache__/
@@ -13,9 +18,5 @@ __pycache__/
 *.env
 
 # Ignore specific files
-models/class_names.json
-models/fossil_resnet18.pt
 scripts/evaluate_model.py
-utils/convert_heics.py
 utils/sync_training_folders.py
-

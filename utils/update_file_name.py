@@ -55,6 +55,3 @@ with open(f"{owner}_file_changes.csv", "w") as f:
 
            
             os.chdir(path_to_owner)
-
-
-
