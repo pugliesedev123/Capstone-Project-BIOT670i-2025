@@ -3,7 +3,7 @@ import os
 import re
 
 
-##Creates two 
+##Creates two files containing the taxa within data/train and which files/folders may have been skipped
 
 def write_to_file(file, text):
     #Decide header of file based on filename
