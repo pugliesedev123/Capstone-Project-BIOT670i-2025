@@ -6,12 +6,14 @@ print("It will also remove empty taxon folders from the existing owner\\* subfol
 #For Mac
 #user_path = "data/train"
 #pattern = re.compile(r"[\s\S]*/data/train/")
-#output = "Directory_File_output.csv"
+
 
 #For Windows
 #user_path = "data\\train"
 #pattern = re.compile(r"[\s\S]*\\data\\train\\")
-#output = "data\\Folders_output.txt"
+
+
+output = "Directory_File_output.csv"
 
 #Just paste the file path
 user_path = input("Paste path of directory to get contents")
