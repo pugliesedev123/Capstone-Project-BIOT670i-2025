@@ -233,14 +233,32 @@ def main():
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
     parser.add_argument('--batch-size', type=int, default=16, help='Batch size')
     parser.add_argument('--epochs', type=int, default=5, help='Number of training epochs')
-    parser.add_argument('--model-path', type=str, default='models/fossil_resnet18.pt',
-                        help='Path to save model weights')
-    parser.add_argument('--index-path', type=str, default='models/train_index_resnet18.pt',
+    parser.add_argument('--model-path', type=str, default=None,
+                       help='Path to save model weights')
+    parser.add_argument('--index-path', type=str, default=None,
                         help='Path to save training embedding index')
     parser.add_argument("--model", type=str, default='resnet18',
                         choices=["resnet18", "resnet34", "resnet50", "vgg16"],
                         help="Determines which model to train")
     args = parser.parse_args()
+
+    # Location where model state will be stored
+    if args.model_path:
+        path_to_model = args.model_path
+        #print(f"Model path supplied, model will be stored at:\n{path_to_model}")
+    else:
+        path_to_model = f"models/fossil_{args.model}.pt"
+        #print(f"No model specified, will be stored at:\n{path_to_model}")
+
+    # Location where train_index will be stored
+    if args.index_path:
+        path_to_index = args.index_path
+        #print(f"Index path supplied, index model will be stored at:\n{path_to_index}")
+    else:
+        path_to_index = f"models/train_index_{args.model}.pt"
+       #print(f"No index path supplied, index model will be stored at:\n{path_to_index}")
+
+
 
     # Apply seed as early as possible so all randomness is controlled
     set_seed(args.seed)
@@ -328,8 +346,8 @@ def main():
         print("[INFO] Class weights:", class_weights.tolist())
 
     # Save class names next to the model path for later use by the predictor
-    os.makedirs(os.path.dirname(args.model_path) or ".", exist_ok=True)
-    with open(os.path.join(os.path.dirname(args.model_path) or ".", "class_names.json"), "w") as f:
+    os.makedirs(os.path.dirname(path_to_model) or ".", exist_ok=True)
+    with open(os.path.join(os.path.dirname(path_to_model) or ".", "class_names.json"), "w") as f:
         json.dump(train_data.classes, f)
 
     # Pick GPU if available, else CPU
@@ -405,8 +423,8 @@ def main():
               f"Time: {int(epoch_time // 60)}m {int(epoch_time % 60)}s")
 
     # Save trained weights so you can load them later for prediction
-    torch.save(model.state_dict(), args.model_path)
-    print(f"[INFO] Model saved to {args.model_path}")
+    torch.save(model.state_dict(), path_to_model)
+    print(f"[INFO] Model saved to {path_to_model}")
 
     # Use deterministic preprocessing to index the training set
     index_loader = DataLoader(
@@ -442,9 +460,9 @@ def main():
     }
 
     # Save the index for use by the prediction script
-    os.makedirs(os.path.dirname(args.index_path) or ".", exist_ok=True)
-    torch.save(index_obj, args.index_path)
-    print(f"[INFO] Saved training index to {args.index_path}")
+    os.makedirs(os.path.dirname(path_to_index) or ".", exist_ok=True)
+    torch.save(index_obj, path_to_index)
+    print(f"[INFO] Saved training index to {path_to_index}")
 
 
 if __name__ == "__main__":
