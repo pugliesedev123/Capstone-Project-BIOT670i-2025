@@ -71,8 +71,7 @@ def ensure_min_val_samples(train_dir: str, val_dir: str, min_per_class: int = 1)
 
 
 # --- Helper to build combined train and move split into val without touching data/train ---
-def build_combined_and_val(source_root: str, combined_train_dir: str, val_dir: str, min_total_per_class: int = 20,
-                           split_frac: float = 0.25):
+def build_combined_and_val(exclude_classes: bool, include_config_classes_only: bool, console_print: bool, threshold: int, source_root: str, combined_train_dir: str, val_dir: str, min_total_per_class: int = 20, split_frac: float = 0.20):
     # Clean rebuild
     if os.path.exists(combined_train_dir):
         print(f"[CLEAN] Removing existing directory: {combined_train_dir}")
@@ -84,6 +83,38 @@ def build_combined_and_val(source_root: str, combined_train_dir: str, val_dir: s
     os.makedirs(combined_train_dir, exist_ok=True)
     os.makedirs(val_dir, exist_ok=True)
 
+    # Declare exclusion and inclusion lists.
+    taxon_exclusion_list = []
+    taxon_inclusion_list = []
+
+    # If arguments that define subset of classes using taxa-config.py are present:
+    # seek those files out and append those classes to the above lists
+    if(include_config_classes_only or exclude_classes):
+        if(os.path.isfile('taxa-config.txt')):
+            file = open("taxa-config.txt", "r")
+            line = file.readline()
+            while line:
+                # + icon defines classes we need to include
+                if(include_config_classes_only and line[0] == "+"):
+                    taxon_inclusion_list.append(line.strip("-+\n"))
+                # - icon defines classes we need to exclude
+                elif(exclude_classes and line[0] == "-"):
+                    taxon_exclusion_list.append(line.strip("-+\n"))
+                line = file.readline()
+            file.close()
+        else:
+            print("[INFO] The file taxa-config.txt does not live in the directory. Run utils/taxa_for_config.py to generate.")
+            exit()
+    
+    if include_config_classes_only:
+        print("\n[INFO] Including only the the following taxa for classification:")
+        for name in taxon_inclusion_list:
+            print(f"  - {name}")
+    if exclude_classes:
+        print("\n[INFO] Removing the following taxa from classification:")
+        for name in taxon_exclusion_list:
+            print(f"  - {name}")
+
     # Gather all images by class across owner-* folders
     class_to_paths = {}
     for owner in os.listdir(source_root):
@@ -94,6 +125,10 @@ def build_combined_and_val(source_root: str, combined_train_dir: str, val_dir: s
             img_class_path = os.path.join(owner_path, img_class)
             if not os.path.isdir(img_class_path):
                 continue
+            elif(exclude_classes and img_class.replace("taxon-","") in taxon_exclusion_list):
+                continue
+            elif(include_config_classes_only and img_class.replace("taxon-","") not in taxon_inclusion_list):
+                continue
             imgs = [os.path.join(img_class_path, f) for f in os.listdir(img_class_path)
                     if f.lower().endswith(IMAGE_EXTS)]
             if imgs:
@@ -102,8 +137,20 @@ def build_combined_and_val(source_root: str, combined_train_dir: str, val_dir: s
     # Copy to combined, then move split to val
     for img_class, paths in sorted(class_to_paths.items()):
         total = len(paths)
+
+        if (threshold != None) and (total > threshold):
+            for delta in range(total - threshold):
+                random_element = random.choice(paths)
+                paths.remove(random_element)
+            total = len(paths)
+
         if total < min_total_per_class:
-            print(f"[SKIP] Class '{img_class}' has only {total} images (need ≥ {min_total_per_class})")
+            if (console_print):
+                print(f"[SKIP] Class '{img_class}' has only {total} images (need ≥ {min_total_per_class})")
+            continue
+        elif (threshold != None) and (total < threshold):
+            if (console_print):
+                print(f"[SKIP] Class '{img_class}' is smaller than the {threshold} image threshold")
             continue
 
         random.shuffle(paths)
@@ -111,14 +158,14 @@ def build_combined_and_val(source_root: str, combined_train_dir: str, val_dir: s
         val_img_class_dir = os.path.join(val_dir, img_class)
         os.makedirs(train_img_class_dir, exist_ok=True)
         os.makedirs(val_img_class_dir, exist_ok=True)
-
+        
         copied_files = []
         for src in paths:
             base = os.path.basename(src)
             dst = unique_path(os.path.join(train_img_class_dir, base))
             shutil.copy2(src, dst)
             copied_files.append(dst)
-
+        
         move_k = int(len(copied_files) * split_frac)
         if move_k > 0:
             random.shuffle(copied_files)
@@ -126,9 +173,8 @@ def build_combined_and_val(source_root: str, combined_train_dir: str, val_dir: s
             for p in to_move:
                 dst = unique_path(os.path.join(val_img_class_dir, os.path.basename(p)))
                 shutil.move(p, dst)
-
-        print(f"[INFO] Class '{img_class}': total={total}, moved_to_val={move_k}, "
-              f"remaining_train={len(copied_files) - move_k}")
+        if (console_print):
+            print(f"[INFO] Class '{img_class}': total={total}, moved_to_val={move_k}, remaining_train={len(copied_files) - move_k}")
 
 # Returns model, embedder, and optimizer for resnet models
 def build_resnet_model(model_name: str, num_classes: int, use_pretrain: bool):
@@ -233,13 +279,12 @@ def main():
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
     parser.add_argument('--batch-size', type=int, default=16, help='Batch size')
     parser.add_argument('--epochs', type=int, default=5, help='Number of training epochs')
-    parser.add_argument('--model-path', type=str, default=None,
-                       help='Path to save model weights')
-    parser.add_argument('--index-path', type=str, default=None,
-                        help='Path to save training embedding index')
-    parser.add_argument("--model", type=str, default='resnet18',
-                        choices=["resnet18", "resnet34", "resnet50", "vgg16"],
-                        help="Determines which model to train")
+    parser.add_argument('--model-path', type=str, default=None, help='Path to save model weights')
+    parser.add_argument('--index-path', type=str, default=None, help='Path to save training embedding index')
+    parser.add_argument("--model", type=str, default='resnet18', choices=["resnet18", "resnet34", "resnet50", "vgg16"], help="Determines which model to train")
+    parser.add_argument("--threshold", type=int, help="Generate class balance by defining a threshold that will remove classes if they do not an image count that exceeds this number. Randomly excise images from classes that exceed this number until they are equal to the threshold.")
+    parser.add_argument("--exclude-classes", action='store_true', help="Remove select classes marked with an '-' from taxa-config.py")
+    parser.add_argument("--include-config-classes-only", action='store_true', help="Include only classes in taxa-config.py and start with a '+'")
     args = parser.parse_args()
 
     # Location where model state will be stored
@@ -257,8 +302,6 @@ def main():
     else:
         path_to_index = f"models/train_index_{args.model}.pt"
        #print(f"No index path supplied, index model will be stored at:\n{path_to_index}")
-
-
 
     # Apply seed as early as possible so all randomness is controlled
     set_seed(args.seed)
@@ -282,6 +325,10 @@ def main():
     if not args.use_augmented:
         print(f"[INFO] Building combined train and val from {source_root}")
         build_combined_and_val(
+            exclude_classes=args.exclude_classes,
+            include_config_classes_only=args.include_config_classes_only,
+            console_print=args.console_print,
+            threshold=args.threshold,
             source_root=source_root,
             combined_train_dir=train_dir,
             val_dir=val_dir,
@@ -305,12 +352,12 @@ def main():
         if not images:
             raise RuntimeError(f"[ERROR] Validation folder {class_path} is empty!")
 
-    # ImageNet statistics used for pretrained ResNet
+    # ImageNet statistics used for pretraining
     IMAGENET_MEAN = [0.485, 0.456, 0.406]
     IMAGENET_STD = [0.229, 0.224, 0.225]
 
     # Transforms
-    # These resize and normalize images to the format ResNet expects
+    # These resize and normalize images to the expected format
     train_transforms = transforms.Compose([
         transforms.Resize((256, 256)),
         transforms.CenterCrop(224),
@@ -338,6 +385,7 @@ def main():
     targets = torch.tensor(train_data.targets)
     class_counts = torch.bincount(targets)
     class_weights = (1.0 / class_counts.float())
+
     # Normalization so average weight is near 1
     class_weights = class_weights / class_weights.sum() * len(class_weights)
 

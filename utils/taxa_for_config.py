@@ -2,36 +2,29 @@ import glob
 import os
 import re
 
-
 ##Creates two files containing the taxa within data/train and which files/folders may have been skipped
 
 def write_to_file(file, text):
-    #Decide header of file based on filename
-    if file == "config.txt":
-        header= "Taxon"
-    elif file == "ignore.txt":
-        header = "Ignored items in directory"
+
+    header = "The following is a list of valid taxa categories that exist currently in the database.\nReplace the + with a - if you wish to exclude this taxon.\n\nIf running your classification with the argument '--include-config-classes-only', delete all rows from the generated .txt besides those you wish to include that start with '+'\n"
     #Write 'text', which is a list, to appropriate file
     with open(file, "w") as f:
-        f.write(f"{header},\n")
+        f.write(f"{header}")
         for item in text:
-            f.write(f"{item},\n")
+            f.write(f"+{item}\n")
 
-def get_taxa():
-
-    #Initialize empty lists
+def main():
+    #Initialize empty list
     taxa = []
-    ignore = []
+
     #Pattern to get taxon from folder
     pattern = re.compile(r"taxon-(\S*)")
+
     #Recursively go through data/train folder to get all folders
-    for item in glob.glob(r"data//train//*//*", recursive=True):
+    for item in glob.glob(r"data/train/*/*", recursive=True):
         #Match the pattern for taxon
         match = re.search(pattern, item)
-        #Skip if no match, but log for troubleshooting
-        if match == None:
-            ignore.append(item)
-            continue
+
         #Grab match and add to list
         #And make lowercase for simplicity and to remove duplicates of different case later on
         taxon = match.group(1).lower()
@@ -42,16 +35,7 @@ def get_taxa():
     unique_taxons.sort()
 
     #Write lists to files
-    write_to_file("config.txt",unique_taxons)
-    write_to_file("ignore.txt",ignore)
-
-
-    return unique_taxons
-
-
-def main():
-    
-    taxa = get_taxa()
+    write_to_file("taxa-config.txt",unique_taxons)
     
 if __name__ == "__main__":
     main()

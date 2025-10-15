@@ -38,6 +38,7 @@ def main():
     # Command-Line Arguments
     parser = argparse.ArgumentParser(description="Predict fossil classes for images in a folder (recursively).")
     parser.add_argument("--example-dir", required=True, help="Path to folder containing example images (processed recursively).")
+    parser.add_argument("--console-print", action='store_true', help="Print extra details to console")
     parser.add_argument("--top-predictions", type=int, default=3, help="How many top guesses to record for each image.")
     parser.add_argument("--neighbors", type=int, default=3, help="How many closest training images to record.")
     parser.add_argument("--model-path", default="models/fossil_resnet18.pt", help="Path to the trained model weights file.")
@@ -106,21 +107,21 @@ def main():
     for i in range(1, args.top_predictions + 1):
         header += [
             f"class_prediction_{i}",
-            f"class_prediction_{i}_confidence_percentage"
+            f"class_prediction_{i}_confidence_percentage",
+            f"class_prediction_{i}_IsAccurate"
         ]
 
     # Columns for nearest neighbor results
     for k in range(1, args.neighbors + 1):
         header += [
             f"nearest_neighbor_{k}_label",
-            f"nearest_neighbor_{k}_cosine_similarity",
+            f"nearest_neighbor_{k}_cosine_similarity", # Must be able to explain this value
             f"nearest_neighbor_{k}_path"
         ]
     rows = []
 
     if not os.path.isdir(args.example_dir):
         raise FileNotFoundError(f"Input folder not found: {args.example_dir}")
-
 
     with torch.no_grad():
         for root, _, files in os.walk(args.example_dir):
@@ -152,8 +153,9 @@ def main():
                 top_probs = top_probs[0].cpu().numpy()
                 top_indices = top_indices[0].cpu().numpy()
 
-                rel_path_for_print = os.path.relpath(img_path, args.example_dir)
-                print(f"\n{rel_path_for_print}:")
+                if(args.console_print):
+                    rel_path_for_print = os.path.relpath(img_path, args.example_dir)
+                    print(f"\n{rel_path_for_print}:")
 
                 # Start the CSV row with file name and parent folder name
                 row = [file, parent_folder]
@@ -162,8 +164,16 @@ def main():
                 for i in range(args.top_predictions):
                     predicted_class = class_names[top_indices[i]]   # map index to class name
                     confidence_pct = float(top_probs[i] * 100.0)    # show as percent
-                    print(f"{i+1}. {predicted_class} ({confidence_pct:.2f}% confidence)")
-                    row += [predicted_class, f"{confidence_pct:.2f}"]
+
+                    class_accurate = ""
+                    if predicted_class.replace("taxon-","") == (parent_folder.replace("taxon-","") or parent_folder):
+                        class_accurate = "Yes"
+                    else:
+                        class_accurate = "No"
+
+                    if(args.console_print):
+                        print(f"{i+1}. {predicted_class} ({confidence_pct:.2f}% confidence)")
+                    row += [predicted_class, f"{confidence_pct:.2f}", class_accurate]
 
                 # 2) Find nearest neighbors from the training index
                 # First get features for the query image using the embedder
