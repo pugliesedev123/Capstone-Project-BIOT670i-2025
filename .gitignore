@@ -4,6 +4,7 @@ data/
 example_images/
 old_example/
 example/
+scripts/old/
 output/
 models/
 prediction_results/
@@ -18,5 +19,6 @@ __pycache__/
 *.env
 
 # Ignore specific files
+taxa-config.txt
 scripts/evaluate_model.py
 utils/sync_training_folders.py

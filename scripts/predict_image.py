@@ -3,6 +3,7 @@ import argparse
 import csv
 import json
 import os
+from pathlib import Path
 from datetime import datetime
 
 import torch
@@ -16,21 +17,41 @@ def is_image(filename):
     extensions = (".png", ".jpg", ".jpeg")
     return filename.lower().endswith(extensions)
 
+# Updated using ChatGPT
+def load_embedder_from_classifier(model_path_str, classifier_state, device):
+    # pick arch and set Identity at the correct place
+    if "vgg16" in model_path_str:
+        embedder = models.vgg16(weights=None)
+        embedder.classifier[6] = nn.Identity()     # 4096-d features
+        drop_prefixes = ("classifier.6.",)
+    elif "densenet121" in model_path_str:
+        embedder = models.densenet121(weights=None)
+        embedder.classifier = nn.Identity()        # 1024-d features
+        drop_prefixes = ("classifier.",)
+    elif "resnet18" in model_path_str:
+        embedder = models.resnet18(weights=None)
+        embedder.fc = nn.Identity()                # 512-d features
+        drop_prefixes = ("fc.",)
+    elif "resnet34" in model_path_str:
+        embedder = models.resnet34(weights=None)
+        embedder.fc = nn.Identity()
+        drop_prefixes = ("fc.",)
+    elif "resnet50" in model_path_str:
+        embedder = models.resnet50(weights=None)
+        embedder.fc = nn.Identity()                # 2048-d features
+        drop_prefixes = ("fc.",)
+    else:
+        raise ValueError("Unknown arch for embedder")
 
-def load_embedder_from_classifier(classifier_state, device):
-    """
-    Build a copy of ResNet-18 that outputs features instead of class scores.
-    """
-    embedder = models.resnet18(weights=None)
-    embedder.fc = nn.Identity()  # Replace the last layer so outputs are 512-length features
+    # unwrap and strip DDP prefix
+    state = classifier_state.get("state_dict", classifier_state)
+    state = {k.replace("module.", ""): v for k, v in state.items()}
+    # drop the head weights for this arch
+    keep = {k: v for k, v in state.items() if not any(k.startswith(p) for p in drop_prefixes)}
 
-    # Remove the classifier weights from the trained state dict
-    # We keep everything except the last layer named "fc.*"
-    state_no_fc = {k: v for k, v in classifier_state.items() if not k.startswith("fc.")}
-    embedder.load_state_dict(state_no_fc, strict=False)
+    embedder.load_state_dict(keep, strict=False)
+    return embedder.to(device).eval()
 
-    embedder = embedder.to(device).eval()
-    return embedder
 
 
 def main():
@@ -38,11 +59,12 @@ def main():
     # Command-Line Arguments
     parser = argparse.ArgumentParser(description="Predict fossil classes for images in a folder (recursively).")
     parser.add_argument("--example-dir", required=True, help="Path to folder containing example images (processed recursively).")
+    parser.add_argument("--console-print", action='store_true', help="Print extra details to console")
     parser.add_argument("--top-predictions", type=int, default=3, help="How many top guesses to record for each image.")
     parser.add_argument("--neighbors", type=int, default=3, help="How many closest training images to record.")
     parser.add_argument("--model-path", default="models/fossil_resnet18.pt", help="Path to the trained model weights file.")
     parser.add_argument("--class-names", default="models/class_names.json", help="Path to class_names.json file.")
-    parser.add_argument("--index-path", default="models/train_index.pt", help="Path to the saved training feature index.")
+    parser.add_argument("--index-path", default="blank.file", help="Path to the saved training feature index.")
     parser.add_argument("--output-dir", default="output", help="Folder where the CSV will be saved.")
     args = parser.parse_args()
 
@@ -58,27 +80,53 @@ def main():
             class_names = list(class_names.values())
 
     # Build the classifier model shape to match training
-    model = models.resnet18(weights=None)
-    # Replace the last layer to have the right number of classes
-    model.fc = nn.Linear(model.fc.in_features, len(class_names))
-    # Load trained weights
-    state = torch.load(args.model_path, map_location=device)
-    model.load_state_dict(state)
-    model = model.to(device).eval()  # eval mode means no training behavior like dropout
+    if (args.model_path == 'models/fossil_resnet18.pt'):
+        model = models.resnet18(weights=None)
+        model.fc = nn.Linear(model.fc.in_features, len(class_names))
+    elif (args.model_path == 'models/fossil_resnet34.pt'):
+        model = models.resnet34(weights=None)
+        model.fc = nn.Linear(model.fc.in_features, len(class_names))
+    elif (args.model_path == 'models/fossil_resnet50.pt'):
+        model = models.resnet50(weights=None)
+        model.fc = nn.Linear(model.fc.in_features, len(class_names))
+    elif (args.model_path == 'models/fossil_vgg16.pt'):
+        model = models.vgg16(weights=None)
+        in_features = model.classifier[-1].in_features
+        model.classifier[-1] = nn.Linear(in_features, len(class_names))
+    elif (args.model_path == 'models/fossil_densenet121.pt'):
+        model = models.densenet121(weights=None)
+        model.classifier = nn.Linear(model.classifier.in_features, len(class_names))
+
+
+    # Generated fix using ChatGPT
+    ckpt = torch.load(args.model_path, map_location=device)
+    state = ckpt.get("state_dict", ckpt)
+    state = {k.replace("module.", ""): v for k, v in state.items()}
+
+    if "resnet" in args.model_path:
+        state.pop("fc.weight", None); state.pop("fc.bias", None)
+    elif "vgg16" in args.model_path:
+        state.pop("classifier.6.weight", None); state.pop("classifier.6.bias", None)
+    elif "densenet121" in args.model_path:
+        state.pop("classifier.weight", None); state.pop("classifier.bias", None)
+
+    missing, unexpected = model.load_state_dict(state, strict=False)    
+    args.index_path = Path(args.index_path)
 
     # Build an embedder that gives feature vectors instead of class scores
-    embedder = load_embedder_from_classifier(state, device)
+    embedder = load_embedder_from_classifier(args.model_path, state, device)
 
-    # Load the saved training feature index
-    index_obj = torch.load(args.index_path, map_location="cpu")
-    index_embeddings = index_obj["embeddings"].float()  # shape [N, 512], N is number of training images
-    index_labels = index_obj["labels"].long()           # class id for each embedding
-    index_paths = index_obj["paths"]                    # file path for each training image
-    idx_to_class = index_obj.get("idx_to_class", None)
-    if idx_to_class is None:
-        # If not stored, build it from the inverse of class_to_idx
-        class_to_idx = index_obj["class_to_idx"]
-        idx_to_class = {v: k for k, v in class_to_idx.items()}
+    if(args.index_path.is_file()):
+        # Load the saved training feature index
+        index_obj = torch.load(args.index_path, map_location="cpu")
+        index_embeddings = index_obj["embeddings"].float()  # shape [N, 512], N is number of training images
+        index_labels = index_obj["labels"].long()           # class id for each embedding
+        index_paths = index_obj["paths"]                    # file path for each training image
+        idx_to_class = index_obj.get("idx_to_class", None)
+        if idx_to_class is None:
+            # If not stored, build it from the inverse of class_to_idx
+            class_to_idx = index_obj["class_to_idx"]
+            idx_to_class = {v: k for k, v in class_to_idx.items()}
 
     IMAGENET_MEAN = [0.485, 0.456, 0.406]
     IMAGENET_STD = [0.229, 0.224, 0.225]
@@ -106,21 +154,22 @@ def main():
     for i in range(1, args.top_predictions + 1):
         header += [
             f"class_prediction_{i}",
-            f"class_prediction_{i}_confidence_percentage"
+            f"class_prediction_{i}_confidence_percentage",
+            f"class_prediction_{i}_IsAccurate"
         ]
 
-    # Columns for nearest neighbor results
-    for k in range(1, args.neighbors + 1):
-        header += [
-            f"nearest_neighbor_{k}_label",
-            f"nearest_neighbor_{k}_cosine_similarity",
-            f"nearest_neighbor_{k}_path"
-        ]
+    if(args.index_path.is_file()):
+        # Columns for nearest neighbor results
+        for k in range(1, args.neighbors + 1):
+            header += [
+                f"nearest_neighbor_{k}_label",
+                f"nearest_neighbor_{k}_cosine_similarity", # Must be able to explain this value
+                f"nearest_neighbor_{k}_path"
+            ]
     rows = []
 
     if not os.path.isdir(args.example_dir):
         raise FileNotFoundError(f"Input folder not found: {args.example_dir}")
-
 
     with torch.no_grad():
         for root, _, files in os.walk(args.example_dir):
@@ -152,18 +201,29 @@ def main():
                 top_probs = top_probs[0].cpu().numpy()
                 top_indices = top_indices[0].cpu().numpy()
 
-                rel_path_for_print = os.path.relpath(img_path, args.example_dir)
-                print(f"\n{rel_path_for_print}:")
+                if(args.console_print):
+                    rel_path_for_print = os.path.relpath(img_path, args.example_dir)
+                    print(f"\n{rel_path_for_print}:")
 
                 # Start the CSV row with file name and parent folder name
                 row = [file, parent_folder]
 
                 # Add the top K class predictions to the row and print them
                 for i in range(args.top_predictions):
+                    
                     predicted_class = class_names[top_indices[i]]   # map index to class name
+                    
                     confidence_pct = float(top_probs[i] * 100.0)    # show as percent
-                    print(f"{i+1}. {predicted_class} ({confidence_pct:.2f}% confidence)")
-                    row += [predicted_class, f"{confidence_pct:.2f}"]
+
+                    class_accurate = ""
+                    if predicted_class.replace("taxon-","") == (parent_folder.replace("taxon-","") or parent_folder):
+                        class_accurate = "Yes"
+                    else:
+                        class_accurate = "No"
+
+                    if(args.console_print):
+                        print(f"{i+1}. {predicted_class} ({confidence_pct:.2f}% confidence)")
+                    row += [predicted_class, f"{confidence_pct:.2f}", class_accurate]
 
                 # 2) Find nearest neighbors from the training index
                 # First get features for the query image using the embedder
@@ -172,16 +232,17 @@ def main():
 
                 # Compute cosine similarity to all training features in the index
                 # This is a dot product since both sides are normalized
-                sims = torch.matmul(index_embeddings, q.cpu())  # shape [N]
-                # Pick the top K closest matches
-                vals, inds = torch.topk(sims, k=min(args.neighbors, sims.numel()), largest=True)
+                if(args.index_path.is_file()):
+                    sims = torch.matmul(index_embeddings, q.cpu())  # shape [N]
+                    # Pick the top K closest matches
+                    vals, inds = torch.topk(sims, k=min(args.neighbors, sims.numel()), largest=True)
 
-                # Add neighbor info to the row
-                for s, i_idx in zip(vals.tolist(), inds.tolist()):
-                    lbl_idx = int(index_labels[i_idx])          # class id of the neighbor
-                    lbl = idx_to_class.get(lbl_idx, str(lbl_idx))  # class name of the neighbor
-                    path = index_paths[i_idx]                   # file path to the neighbor image
-                    row += [lbl, f"{s:.6f}", path]
+                    # Add neighbor info to the row
+                    for s, i_idx in zip(vals.tolist(), inds.tolist()):
+                        lbl_idx = int(index_labels[i_idx])          # class id of the neighbor
+                        lbl = idx_to_class.get(lbl_idx, str(lbl_idx))  # class name of the neighbor
+                        path = index_paths[i_idx]                   # file path to the neighbor image
+                        row += [lbl, f"{s:.6f}", path]
 
                 rows.append(row)
 
