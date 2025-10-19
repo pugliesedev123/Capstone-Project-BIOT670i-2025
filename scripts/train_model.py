@@ -71,7 +71,7 @@ def ensure_min_val_samples(train_dir: str, val_dir: str, min_per_class: int = 1)
 
 
 # --- Helper to build combined train and move split into val without touching data/train ---
-def build_combined_and_val(exclude_classes: bool, include_config_classes_only: bool, console_print: bool, threshold: int, source_root: str, combined_train_dir: str, val_dir: str, min_total_per_class: int = 20, split_frac: float = 0.20):
+def build_combined_and_val(input_config: str, exclude_classes: bool, include_config_classes_only: bool, console_print: bool, threshold: int, source_root: str, combined_train_dir: str, val_dir: str, min_total_per_class: int = 20, split_frac: float = 0.20):
     # Clean rebuild
     if os.path.exists(combined_train_dir):
         print(f"[CLEAN] Removing existing directory: {combined_train_dir}")
@@ -87,11 +87,11 @@ def build_combined_and_val(exclude_classes: bool, include_config_classes_only: b
     taxon_exclusion_list = []
     taxon_inclusion_list = []
 
-    # If arguments that define subset of classes using taxa-config.py are present:
+    # If arguments that define subset of classes using taxa-config are present:
     # seek those files out and append those classes to the above lists
     if(include_config_classes_only or exclude_classes):
-        if(os.path.isfile('taxa-config.txt')):
-            file = open("taxa-config.txt", "r")
+        if(os.path.isfile(input_config)):
+            file = open(input_config, "r")
             line = file.readline()
             while line:
                 # + icon defines classes we need to include
@@ -103,7 +103,7 @@ def build_combined_and_val(exclude_classes: bool, include_config_classes_only: b
                 line = file.readline()
             file.close()
         else:
-            print("[INFO] The file taxa-config.txt does not live in the directory. Run utils/taxa_for_config.py to generate.")
+            print(f"[INFO] The file {input_config} does not live in the directory. Run utils/taxa_for_config.py to generate.")
             exit()
     
     if include_config_classes_only:
@@ -270,6 +270,33 @@ def build_vgg16_embedder(embedder, model):
 
     return embedder
 
+
+def build_densenet121_model(use_pretrain: bool, num_of_target_classes: int):
+    model = models.densenet121(pretrained=use_pretrain)
+    if use_pretrain:
+        print("[INFO] Loaded pretrained densenet121")
+    model.classifier = nn.Linear(model.classifier.in_features, num_of_target_classes)
+    head_params = model.classifier.parameters()
+    optimizer = optim.Adam(head_params, lr=0.001)
+    print("[INFO] Optimizer and loss function initialized")
+
+    embedder = build_densenet121_embedder(models.densenet121(pretrained=False), model)
+
+    return model, embedder, optimizer
+
+# Builds embedder for densenet121
+def build_densenet121_embedder(embedder, model):
+    embedder.classifier = nn.Identity()
+    state = model.state_dict()
+    state_no_fc = {k: v for k, v in state.items() if not k.startswith(f'classifier.{6}.')}
+    missing, unexpected = embedder.load_state_dict(state_no_fc, strict=False)
+    if missing:
+        print(f"[INFO] Embedder missing keys: {missing}")
+    if unexpected:
+        print(f"[INFO] Embedder unexpected keys: {unexpected}")
+
+    return embedder
+
 def main():
     # Command-Line Arguments
     parser = argparse.ArgumentParser(description='Train fossil image classifier')
@@ -279,12 +306,13 @@ def main():
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
     parser.add_argument('--batch-size', type=int, default=16, help='Batch size')
     parser.add_argument('--epochs', type=int, default=5, help='Number of training epochs')
+    parser.add_argument("--input-config", default="taxa-config.txt", help="Taxa file to guide for your augmentation")
     parser.add_argument('--model-path', type=str, default=None, help='Path to save model weights')
     parser.add_argument('--index-path', type=str, default=None, help='Path to save training embedding index')
-    parser.add_argument("--model", type=str, default='resnet18', choices=["resnet18", "resnet34", "resnet50", "vgg16"], help="Determines which model to train")
+    parser.add_argument("--model", type=str, default='resnet18', choices=["resnet18", "resnet34", "resnet50", "vgg16", "densenet121"], help="Determines which model to train")
     parser.add_argument("--threshold", type=int, help="Generate class balance by defining a threshold that will remove classes if they do not an image count that exceeds this number. Randomly excise images from classes that exceed this number until they are equal to the threshold.")
-    parser.add_argument("--exclude-classes", action='store_true', help="Remove select classes marked with an '-' from taxa-config.py")
-    parser.add_argument("--include-config-classes-only", action='store_true', help="Include only classes in taxa-config.py and start with a '+'")
+    parser.add_argument("--exclude-classes", action='store_true', help="Remove select classes marked with an '-' from taxa-config")
+    parser.add_argument("--include-config-classes-only", action='store_true', help="Include only classes in taxa-config and start with a '+'")
     args = parser.parse_args()
 
     # Location where model state will be stored
@@ -295,13 +323,15 @@ def main():
         path_to_model = f"models/fossil_{args.model}.pt"
         #print(f"No model specified, will be stored at:\n{path_to_model}")
 
-    # Location where train_index will be stored
-    if args.index_path:
-        path_to_index = args.index_path
-        #print(f"Index path supplied, index model will be stored at:\n{path_to_index}")
-    else:
-        path_to_index = f"models/train_index_{args.model}.pt"
-       #print(f"No index path supplied, index model will be stored at:\n{path_to_index}")
+    # Indexing is only supported for resnets
+    if(args.model in ["resnet18", "resnet34", "resnet50"]):
+        # Location where train_index will be stored
+        if args.index_path:
+            path_to_index = args.index_path
+            #print(f"Index path supplied, index model will be stored at:\n{path_to_index}")
+        else:
+            path_to_index = f"models/train_index_{args.model}.pt"
+        #print(f"No index path supplied, index model will be stored at:\n{path_to_index}")
 
     # Apply seed as early as possible so all randomness is controlled
     set_seed(args.seed)
@@ -325,6 +355,7 @@ def main():
     if not args.use_augmented:
         print(f"[INFO] Building combined train and val from {source_root}")
         build_combined_and_val(
+            input_config=args.input_config,
             exclude_classes=args.exclude_classes,
             include_config_classes_only=args.include_config_classes_only,
             console_print=args.console_print,
@@ -353,8 +384,12 @@ def main():
             raise RuntimeError(f"[ERROR] Validation folder {class_path} is empty!")
 
     # ImageNet statistics used for pretraining
-    IMAGENET_MEAN = [0.485, 0.456, 0.406]
-    IMAGENET_STD = [0.229, 0.224, 0.225]
+    if args.model in ['resnet18', 'resnet34', 'resnet50', 'densenet121']:
+        IMAGENET_MEAN = [0.485, 0.456, 0.406]
+        IMAGENET_STD = [0.229, 0.224, 0.225]
+    elif args.model in ['vgg16']:
+        IMAGENET_MEAN = [0.48235, 0.45882, 0.40784]
+        IMAGENET_STD = [0.00392156862745098, 0.00392156862745098, 0.00392156862745098]
 
     # Transforms
     # These resize and normalize images to the expected format
@@ -408,14 +443,14 @@ def main():
         else:
             print("[WARN] GPU not detected - training on CPU will be slow.")
 
-    num_classes = len(train_data.classes)
-
-    # Build a model, embedder, and optimizer
-    if args.model=='vgg16':
+    # Build a model, embedder, and optimizer based on the model argument
+    if args.model in ['vgg16']:
         model, embedder, optimizer = build_vgg16_model(args.use_pre_train, len(class_counts))
-    else:
-        model, embedder, optimizer = build_resnet_model(args.model, num_classes, args.use_pre_train)
-
+    elif args.model in ['densenet121']:
+        model, embedder, optimizer = build_densenet121_model(args.use_pre_train, len(class_counts))
+    elif args.model in  ['resnet18', 'resnet34', 'resnet50']:
+        model, embedder, optimizer = build_resnet_model(args.model, len(class_counts), args.use_pre_train)
+    
     # Move model to device
     model = model.to(device)
     print("[INFO] Model moved to device")
@@ -425,7 +460,11 @@ def main():
     print("[INFO] Embedder moved to device")
 
     # Use weighted cross entropy to handle class imbalance
-    criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
+    if (args.model in ['densenet121']):
+        criterion = nn.CrossEntropyLoss()
+    elif (args.model in ['resnet18', 'resnet34', 'resnet50', 'vgg16']):
+        criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
+   
     # Train only the final layer for now to keep things simple and fast
 
     print("[INFO] Starting training loop...")
@@ -474,43 +513,44 @@ def main():
     torch.save(model.state_dict(), path_to_model)
     print(f"[INFO] Model saved to {path_to_model}")
 
-    # Use deterministic preprocessing to index the training set
-    index_loader = DataLoader(
-        datasets.ImageFolder(train_dir, transform=val_transforms),
-        batch_size=max(64, args.batch_size), shuffle=False
-    )
+    if(args.model in ["resnet18", "resnet34", "resnet50"]):
+        # Use deterministic preprocessing to index the training set
+        index_loader = DataLoader(
+            datasets.ImageFolder(train_dir, transform=val_transforms),
+            batch_size=max(64, args.batch_size), shuffle=False
+        )
 
-    # Collect features, labels, and original file paths
-    all_vecs = []
-    all_labels = []
-    all_paths = [p for p, _ in index_loader.dataset.samples]
-    class_to_idx = index_loader.dataset.class_to_idx
-    idx_to_class = {v: k for k, v in class_to_idx.items()}
+        # Collect features, labels, and original file paths
+        all_vecs = []
+        all_labels = []
+        all_paths = [p for p, _ in index_loader.dataset.samples]
+        class_to_idx = index_loader.dataset.class_to_idx
+        idx_to_class = {v: k for k, v in class_to_idx.items()}
 
-    with torch.no_grad():
-        for imgs, labels in tqdm(index_loader, desc="Indexing", unit="batch"):
-            imgs = imgs.to(device)
-            vecs = embedder(imgs)  # shape [B, 512]
-            vecs = torch.nn.functional.normalize(vecs, dim=1)  # unit length for cosine similarity
-            all_vecs.append(vecs.cpu())
-            all_labels.extend(labels.tolist())
+        with torch.no_grad():
+            for imgs, labels in tqdm(index_loader, desc="Indexing", unit="batch"):
+                imgs = imgs.to(device)
+                vecs = embedder(imgs)  # shape [B, 512]
+                vecs = torch.nn.functional.normalize(vecs, dim=1)  # unit length for cosine similarity
+                all_vecs.append(vecs.cpu())
+                all_labels.extend(labels.tolist())
 
-    # Stack all feature tensors into one big matrix
-    embeddings = torch.cat(all_vecs, dim=0) if all_vecs else torch.empty(0, 512)
+        # Stack all feature tensors into one big matrix
+        embeddings = torch.cat(all_vecs, dim=0) if all_vecs else torch.empty(0, 512)
 
-    # Package the index for saving
-    index_obj = {
-        "embeddings": embeddings,  # FloatTensor [N, 512]
-        "labels": torch.tensor(all_labels),  # LongTensor [N]
-        "paths": all_paths,  # list[str]
-        "class_to_idx": class_to_idx,  # dict
-        "idx_to_class": idx_to_class,  # dict
-    }
+        # Package the index for saving
+        index_obj = {
+            "embeddings": embeddings,  # FloatTensor [N, 512]
+            "labels": torch.tensor(all_labels),  # LongTensor [N]
+            "paths": all_paths,  # list[str]
+            "class_to_idx": class_to_idx,  # dict
+            "idx_to_class": idx_to_class,  # dict
+        }
 
-    # Save the index for use by the prediction script
-    os.makedirs(os.path.dirname(path_to_index) or ".", exist_ok=True)
-    torch.save(index_obj, path_to_index)
-    print(f"[INFO] Saved training index to {path_to_index}")
+        # Save the index for use by the prediction script
+        os.makedirs(os.path.dirname(path_to_index) or ".", exist_ok=True)
+        torch.save(index_obj, path_to_index)
+        print(f"[INFO] Saved training index to {path_to_index}")
 
 
 if __name__ == "__main__":

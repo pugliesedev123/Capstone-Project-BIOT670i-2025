@@ -77,13 +77,14 @@ def main():
     # Command-Line Arguments
     parser = argparse.ArgumentParser(description="Combine owners into a single dataset, send 1/5 to val, and save augmented images for the rest")
     parser.add_argument("--input-root", default="data/train", help="Root with owner-* subdirectories")
+    parser.add_argument("--input-config", default="taxa-config.txt", help="Taxa file to guide for your augmentation")
     parser.add_argument("--val-root", default="data/val/owner-combined", help="Where to copy validation images")
     parser.add_argument("--aug-root", default="data/augmented/owner-combined", help="Where to save augmented images")
     parser.add_argument("--aug-per-image", type=int, default=3, help="How many augmented samples per training image")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for split and transforms")
     parser.add_argument("--console-print", action='store_true', help="Print extra details to console")
-    parser.add_argument("--exclude-classes", action='store_true', help="Remove select classes marked with an '-' from taxa-config.py")
-    parser.add_argument("--include-config-classes-only", action='store_true', help="Include only classes in taxa-config.py and start with a '+'")
+    parser.add_argument("--exclude-classes", action='store_true', help="Remove select classes marked with an '-' from taxa-config.txt")
+    parser.add_argument("--include-config-classes-only", action='store_true', help="Include only classes in taxa-config.txt and start with a '+'")
     parser.add_argument("--threshold", type=int, help="Generate class balance by defining a threshold that will remove classes if they do not an image count that exceeds this number. Randomly excise images from classes that exceed this number until they are equal to the threshold.")
     parser.add_argument("--disable-tf", action='append', type=str.lower, default=[], help="Disable specific transformations for augmentation. The following transforms can be disabled by repeatedly calling the argument: rotate, scale, zoom, horizontalflip, verticalflip, grayscale, equalize, sharpen")
     parser.add_argument("--disable-ca", action='append', type=str.lower, default=[], help="Disable specific class for augmentation (eg. --disable-ca exogyra_sp)")
@@ -124,11 +125,11 @@ def main():
     taxon_exclusion_list = []
     taxon_inclusion_list = []
 
-    # If arguments that define subset of classes using taxa-config.py are present:
+    # If arguments that define subset of classes using taxa-config.txt are present:
     # seek those files out and append those classes to the above lists
     if(args.include_config_classes_only or args.exclude_classes):
-        if(os.path.isfile('taxa-config.txt')):
-            file = open("taxa-config.txt", "r")
+        if(os.path.isfile(args.input_config)):
+            file = open(args.input_config, "r")
             line = file.readline()
             while line:
                 # + icon defines classes we need to include
@@ -140,7 +141,7 @@ def main():
                 line = file.readline()
             file.close()
         else:
-            print("[INFO] The file taxa-config.txt does not live in the directory. Run utils/taxa_for_config.py to generate.")
+            print(f"[INFO] The file {args.input_config} does not live in the directory. Run utils/taxa_for_config.py to generate.")
             exit()
     
     if args.include_config_classes_only:
@@ -153,7 +154,7 @@ def main():
             print(f"  - {name}")
 
     # Scan owner-* folders and collect all images by their class folder.
-    # This loop will exclude classes if they are explicetely removed via taxa-config.py
+    # This loop will exclude classes if they are explicetely removed via taxa-config
     taxon_to_images = {}  
 
     for owner_folder in os.listdir(args.input_root):

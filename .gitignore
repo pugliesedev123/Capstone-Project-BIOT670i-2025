@@ -4,6 +4,7 @@ data/
 example_images/
 old_example/
 example/
+scripts/old/
 output/
 models/
 prediction_results/
