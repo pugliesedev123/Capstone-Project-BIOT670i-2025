@@ -4,7 +4,7 @@ In this project, we train neural networks to classify fossil images from across 
 
 We provide a Python toolkit for:
 - **Image preprocessing and augmentation** (crop, colourize, rotate, zoom, flips, etc.)
-- **ResNet, VGG, and Densenet training** with class imbalance handling
+- **ResNet-18, ResNet-34, ResNet-50, VGG16, and DenseNet121 training** with class imbalance handling
 - **Prediction** on new images with support for nearest-neighbor lookups on ResNet training examples  
 
 The goal is a practical framework for researchers and fossil enthusiasts alike.
