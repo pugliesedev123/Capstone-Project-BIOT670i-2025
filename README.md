@@ -9,14 +9,10 @@ We provide a Python toolkit for:
 
 The goal is a practical framework for researchers and fossil enthusiasts alike.
 
----
-
 # Fossil Image Preprocessing & Training
 
 This repository contains scripts to preprocess fossil image datasets, train an image classifier, and run predictions on new fossil images or folders.  
 Each stage is seed-controlled for reproducibility.
-
----
 
 ## Installation
 
