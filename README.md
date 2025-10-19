@@ -33,8 +33,6 @@ pip install torch torchvision tqdm pillow numpy
 
 All other imports are from the Python standard library (`os`, `shutil`, `argparse`, etc.).
 
----
-
 ## Dataset Layout
 
 Place images in **owner** and their sub-**taxon** folders:
@@ -53,8 +51,6 @@ data/train/
 
 Each `owner-*` folder contains multiple taxon or mineral folders.  
 Each taxon folder contains `.jpg`, `.jpeg`, or `.png` images.
-
----
 
 ## Utilities
 
@@ -94,8 +90,6 @@ python taxa_for_config.py
 
 This traverses all files in the training folder and returns a taxa-config.txt file that can be used in augmentation and training.
 
----
-
 ## Preprocess and Augment Images
 
 Run the augmentation script to build a validation split and augmented data:
@@ -129,8 +123,6 @@ The script accepts several arguments to control how preprocessing and augmentati
 - Classes with fewer than **20 images** are skipped to avoid poor-quality splits.  
 - Validation images are copied unchanged, while training images are **augmented** using a mix of geometric and appearance transforms (rotation, scaling, flips, sharpness, grayscale, histogram equalization).  
 - Outputs are placed under the `--val-root` and `--aug-root` directories in a layout compatible with PyTorch’s `ImageFolder`.
-
----
 
 ## Train the Model
 
@@ -167,8 +159,6 @@ What happens:
 - `--exclude-classes` (flag) If set, remove any classes marked with `-` in the taxa config.
 - `--include-config-classes-only` (flag) If set, include only classes that appear in the taxa config and are marked with `+`.
 
----
-
 ## Outputs
 
 After preprocessing and training, you will have any one of the following depending on your runthrough
@@ -183,8 +173,6 @@ After preprocessing and training, you will have any one of the following dependi
 
 - `models/train_index.pt` — (only compatible with ResNet models) embedding index of training images for nearest neighbors
 
----
-
 ## Seeds and Reproducibility
 
 All scripts accept a `--seed` argument to make results more repeatable:
@@ -198,8 +186,6 @@ The seed affects:
 - Dataset shuffling and validation split  
 - Random data augmentations (rotations, flips, zoom, etc.)  
 - Torch model initialization  
-
----
 
 ## Predict on New Images or Folders
 
@@ -238,8 +224,6 @@ Alongside top class predictions, the script can also show **nearest neighbors** 
 - See which training fossils most influenced the model’s decision  
 - Spot potential misclassifications (if the nearest examples look wrong)  
 - Build confidence in the prediction by comparing to actual known fossils  
-
----
 
 ## Recommended Workflow
 
