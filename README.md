@@ -173,7 +173,7 @@ After preprocessing and training, you will have any one of the following dependi
 
 - `models/train_index.pt` — (only compatible with ResNet models) embedding index of training images for nearest neighbors
 
-## Seeds and Reproducibility
+#### Seeds and Reproducibility
 
 All scripts accept a `--seed` argument to make results more repeatable:
 
