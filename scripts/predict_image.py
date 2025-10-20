@@ -20,6 +20,7 @@ def is_image(filename):
 # Updated using ChatGPT
 def load_embedder_from_classifier(model_path_str, classifier_state, device):
     # pick arch and set Identity at the correct place
+
     if "vgg16" in model_path_str:
         embedder = models.vgg16(weights=None)
         embedder.classifier[6] = nn.Identity()     # 4096-d features
@@ -40,8 +41,6 @@ def load_embedder_from_classifier(model_path_str, classifier_state, device):
         embedder = models.resnet50(weights=None)
         embedder.fc = nn.Identity()                # 2048-d features
         drop_prefixes = ("fc.",)
-    else:
-        raise ValueError("Unknown arch for embedder")
 
     # unwrap and strip DDP prefix
     state = classifier_state.get("state_dict", classifier_state)
@@ -64,9 +63,13 @@ def main():
     parser.add_argument("--neighbors", type=int, default=3, help="How many closest training images to record.")
     parser.add_argument("--model-path", default="models/fossil_resnet18.pt", help="Path to the trained model weights file.")
     parser.add_argument("--class-names", default="models/class_names.json", help="Path to class_names.json file.")
-    parser.add_argument("--index-path", default="blank.file", help="Path to the saved training feature index.")
+    parser.add_argument("--index-path", default="", help="Path to the saved training feature index.")
     parser.add_argument("--output-dir", default="output", help="Folder where the CSV will be saved.")
     args = parser.parse_args()
+
+    args.index_path = Path(args.index_path) if args.index_path else Path("")
+    has_index = args.index_path.is_file()
+
 
     # Pick GPU if available, else CPU
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -102,20 +105,31 @@ def main():
     state = ckpt.get("state_dict", ckpt)
     state = {k.replace("module.", ""): v for k, v in state.items()}
 
+    # Load checkpoint once
+    ckpt = torch.load(args.model_path, map_location=device)
+    state = ckpt.get("state_dict", ckpt)
+    state = {k.replace("module.", ""): v for k, v in state.items()}
+
+    # 1) Classifier: DO NOT drop the head
+    missing, unexpected = model.load_state_dict(state, strict=False)
+
+    # Make sure the classifier runs in eval mode on the right device
+    model = model.to(device).eval()
+
+    # 2) Embedder: use a copy with the head removed
+    state_for_embedder = dict(state)  # shallow copy is fine for Tensors
+
     if "resnet" in args.model_path:
-        state.pop("fc.weight", None); state.pop("fc.bias", None)
+        state_for_embedder.pop("fc.weight", None); state_for_embedder.pop("fc.bias", None)
     elif "vgg16" in args.model_path:
-        state.pop("classifier.6.weight", None); state.pop("classifier.6.bias", None)
+        state_for_embedder.pop("classifier.6.weight", None); state_for_embedder.pop("classifier.6.bias", None)
     elif "densenet121" in args.model_path:
-        state.pop("classifier.weight", None); state.pop("classifier.bias", None)
+        state_for_embedder.pop("classifier.weight", None); state_for_embedder.pop("classifier.bias", None)
 
-    missing, unexpected = model.load_state_dict(state, strict=False)    
-    args.index_path = Path(args.index_path)
+    embedder = load_embedder_from_classifier(args.model_path, state_for_embedder, device)
 
-    # Build an embedder that gives feature vectors instead of class scores
-    embedder = load_embedder_from_classifier(args.model_path, state, device)
 
-    if(args.index_path.is_file()):
+    if(has_index):
         # Load the saved training feature index
         index_obj = torch.load(args.index_path, map_location="cpu")
         index_embeddings = index_obj["embeddings"].float()  # shape [N, 512], N is number of training images
@@ -127,8 +141,12 @@ def main():
             class_to_idx = index_obj["class_to_idx"]
             idx_to_class = {v: k for k, v in class_to_idx.items()}
 
-    IMAGENET_MEAN = [0.485, 0.456, 0.406]
-    IMAGENET_STD = [0.229, 0.224, 0.225]
+    if "resnet" in args.model_path or "densenet121" in args.model_path:
+        IMAGENET_MEAN = [0.485, 0.456, 0.406]
+        IMAGENET_STD = [0.229, 0.224, 0.225]
+    elif "vgg16" in args.model_path:
+        IMAGENET_MEAN = [0.48235, 0.45882, 0.40784]
+        IMAGENET_STD = [0.00392156862745098, 0.00392156862745098, 0.00392156862745098]
     
     transform = transforms.Compose([
         transforms.Resize((256, 256)),    # shorter side to 256
@@ -157,7 +175,7 @@ def main():
             f"class_prediction_{i}_IsAccurate"
         ]
 
-    if(args.index_path.is_file()):
+    if(has_index):
         # Columns for nearest neighbor results
         for k in range(1, args.neighbors + 1):
             header += [
@@ -231,7 +249,7 @@ def main():
 
                 # Compute cosine similarity to all training features in the index
                 # This is a dot product since both sides are normalized
-                if(args.index_path.is_file()):
+                if(has_index):
                     sims = torch.matmul(index_embeddings, q.cpu())  # shape [N]
                     # Pick the top K closest matches
                     vals, inds = torch.topk(sims, k=min(args.neighbors, sims.numel()), largest=True)

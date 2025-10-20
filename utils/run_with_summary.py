@@ -48,7 +48,7 @@ def main():
 
     # see defaults on ./scripts/train_model.py
     train_argument_dict = {
-        "use-augmented": False,                   # mark true or false
+        "use-augmented": True,                    # mark true or false
         "console-print": False,                   # mark true or false
         "use-pre-train": True,                    # mark true or false
         "seed": 42,                               # declare a non-zero integer
@@ -77,7 +77,7 @@ def main():
 
     start_time = datetime.datetime.now()
 
-    # subprocess.run(["python", "./utils/taxa_for_config.py"])
+    # subprocess.run(["python", "./utils/taxa_for_config.py"]) #may need to export the taxa used below
 
     # Run Augmentation Script
 
