@@ -1,6 +1,7 @@
 import glob
 import os
 import re
+from pathlib import Path
 
 ##Creates two files containing the taxa within data/train and which files/folders may have been skipped
 
@@ -17,18 +18,13 @@ def main():
     #Initialize empty list
     taxa = []
 
-    #Pattern to get taxon from folder
-    pattern = re.compile(r"taxon-(\S*)")
-
     #Recursively go through data/train folder to get all folders
-    for item in glob.glob(r"data/train/*/*", recursive=True):
-        #Match the pattern for taxon
-        match = re.search(pattern, item)
-
+    for item in glob.glob(r"./data/train/**/*", recursive=True):
+        #Match for taxon folder
         #Grab match and add to list
-        #And make lowercase for simplicity and to remove duplicates of different case later on
-        taxon = match.group(1).lower()
-        taxa.append(taxon)
+        name = Path(item).name
+        if name.startswith("taxon-"):
+            taxa.append(name[len("taxon-"):].lower())
 
     #Remove duplicates and sort
     unique_taxons = list(set(taxa))

@@ -193,13 +193,14 @@ def main():
         n_total = len(combined_images)
         n_val = n_total // 5
 
+        
         # skip classes if they don't exceed the threshold limit
-        if len(combined_images) < args.threshold or (n_total - n_val) < args.threshold:
+        if (args.threshold != None) and (len(combined_images) < args.threshold or (n_total - n_val) < args.threshold):
             threshold_skipped.append((taxon_key, len(combined_images)))
             continue
         
         # if classes exceed the threshold limit, remove some of the combined images until the threshold is reached
-        if n_total > args.threshold:
+        if (args.threshold != None) and  (n_total > args.threshold):
             for delta in range(n_total - args.threshold):
                 random_element = random.choice(combined_images)
                 combined_images.remove(random_element)
@@ -255,7 +256,7 @@ def main():
             print("\n[INFO] Skipped classes with fewer than 20 baseline images:")
             for name, count in skipped:
                 print(f"  - {name}: {count} images")
-        elif(args.threshold):
+        elif(args.threshold != None):
             print(f"\n[INFO] Skipped classes that missed manually definied threshold of {args.threshold}:")
             for name, count in threshold_skipped:
                 print(f"  - {name}: {count} images")

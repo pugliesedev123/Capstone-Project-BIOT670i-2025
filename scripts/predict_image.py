@@ -97,7 +97,6 @@ def main():
         model = models.densenet121(weights=None)
         model.classifier = nn.Linear(model.classifier.in_features, len(class_names))
 
-
     # Generated fix using ChatGPT
     ckpt = torch.load(args.model_path, map_location=device)
     state = ckpt.get("state_dict", ckpt)
@@ -141,9 +140,9 @@ def main():
     # Make sure the output folder exists
     os.makedirs(args.output_dir, exist_ok=True)
     # Build a file name for the CSV that includes the input folder name and a timestamp
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     base_name = os.path.basename(os.path.abspath(args.example_dir)) or "examples"
-    csv_path = os.path.join(args.output_dir, f"predictions_{base_name}_{ts}.csv")
+    csv_path = os.path.join(args.output_dir, f"predictions_{args.model_path.replace("models/fossil_","").replace(".pt","")}_{base_name}_{ts}.csv")
 
     header = [
         "filename",

@@ -302,7 +302,7 @@ def main():
     parser = argparse.ArgumentParser(description='Train fossil image classifier')
     parser.add_argument('--use-augmented', action='store_true', help='Use augmented dataset')
     parser.add_argument("--console-print", action='store_true', help="Print extra details to console")
-    parser.add_argument('--use-pre-train', type=bool, default=True, help='Use pre-trained model')
+    parser.add_argument('--use-pre-train', action='store_true', default=True, help='Use pre-trained model')
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
     parser.add_argument('--batch-size', type=int, default=16, help='Batch size')
     parser.add_argument('--epochs', type=int, default=5, help='Number of training epochs')
