@@ -2,9 +2,11 @@
 import subprocess
 import shlex
 import datetime
-from datetime import timedelta
 import glob
 import os
+import psutil
+import platform
+
 
 def generate_arguments(argument_dict: dict):
     commands = []
@@ -24,6 +26,14 @@ def generate_arguments(argument_dict: dict):
             commands += [f"{flag} {value}"]
         
     return commands
+
+def get_size(num_bytes, suffix="B"):
+    factor = 1024
+    for unit in ["", "K", "M", "G", "T", "P"]:
+        if num_bytes < factor:
+            return f"{num_bytes:.2f}{unit}{suffix}"
+        num_bytes /= factor
+    return f"{num_bytes:.2f}P{suffix}"
 
 def main():
 
@@ -54,7 +64,7 @@ def main():
         "seed": 42,                               # declare a non-zero integer
         "batch-size": 16,                         # declare a non-zero integer
         "epochs": 5,                              # declare a non-zero integer
-        "input-config": "taxa-config.txt",      # declare your target taxa-config file
+        "input-config": "taxa-config.txt",        # declare your target taxa-config file
         "model-path": None,                       # declare your target model weights path or leave None
         "index-path": None,                       # declare your target embedding index path or leave None
         "model": "resnet18",                      # choose one: resnet18, resnet34, resnet50, vgg16, densenet121
@@ -65,19 +75,19 @@ def main():
 
     # see defaults on ./scripts/predict_image.py
     predict_argument_dict = {
-        "example-dir": "./example",                              # required: path to your example images folder (recurses)
+        "example-dir": "./example",                     # required: path to your example images folder (recurses)
         "console-print": False,                         # mark true or false
         "top-predictions": 3,                           # declare a non-zero integer
         "neighbors": 3,                                 # declare a non-zero integer
         "model-path": "models/fossil_resnet18.pt",      # declare your trained weights file
         "class-names": "models/class_names.json",       # declare your class_names.json path
-        "index-path": "models/train_index_resnet18.pt",        # declare your training feature index or leave as placeholder
+        "index-path": "models/train_index_resnet18.pt", # declare your training feature index or leave as placeholder
         "output-dir": "output"                          # declare your target folder for the CSV
     }
 
     start_time = datetime.datetime.now()
 
-    # subprocess.run(["python", "./utils/taxa_for_config.py"]) #may need to export the taxa used below
+    subprocess.run(["python", "./utils/taxa_for_config.py"]) #may need to export the taxa used below
 
     # Run Augmentation Script
 
@@ -110,20 +120,92 @@ def main():
     latest_file = max(list_of_files, key=os.path.getctime)
 
     summary_file = open(latest_file.replace("predictions", "summary").replace(".csv", ".txt"), "w")
-    summary_file.write(f"Runtime Results\n------------------------------------------------------------------------------------------\n\nOutput File: {latest_file}\n\n{augment_argument_summary}\n\n{training_summary}\n\n{prediction_summary}")
-    summary_file.write(f"\n\nTotal time elapsed: {duration}")
+    summary_file.write(f"=" * 40 + " Prediction Summary: " + "=" * 40 + f"\nOutput File: {latest_file}\n\n{augment_argument_summary}\n\n{training_summary}\n\n{prediction_summary}")
+    summary_file.write(f"\n\nTotal time elapsed: {duration}\n\n")
 
-    aug_files = val_files = folders = 0
+    summary_file.write("=" * 40 + " System Information " + "=" * 40 + "\n")
+    uname = platform.uname()
+    summary_file.write(f"System: {uname.system}\n")
+    summary_file.write(f"Node Name: {uname.node}\n")
+    summary_file.write(f"Release: {uname.release}\n")
+    summary_file.write(f"Version: {uname.version}\n")
+    summary_file.write(f"Machine: {uname.machine}\n")
+    summary_file.write(f"Processor: {uname.processor}\n\n")
 
-    for _, dirnames, filenames in os.walk(f"./{augment_argument_dict.get('aug-root')}"):
+    # CPU Information
+    summary_file.write("=" * 40 + " CPU Info " + "=" * 40 + "\n")
+    summary_file.write(f"Physical cores: {psutil.cpu_count(logical=False)}\n")
+    summary_file.write(f"Total cores: {psutil.cpu_count(logical=True)}\n")
+
+    cpufreq = psutil.cpu_freq()
+    if cpufreq is not None:
+        summary_file.write(f"Max Frequency: {cpufreq.max:.2f}Mhz\n")
+        summary_file.write(f"Min Frequency: {cpufreq.min:.2f}Mhz\n")
+        summary_file.write(f"Current Frequency: {cpufreq.current:.2f}Mhz\n")
+    else:
+        summary_file.write("CPU frequency: unavailable\n")
+
+    summary_file.write("CPU Usage Per Core:\n")
+    for i, percentage in enumerate(psutil.cpu_percent(percpu=True, interval=1)):
+        summary_file.write(f"Core {i}: {percentage}%\n")
+    summary_file.write(f"Total CPU Usage: {psutil.cpu_percent()}%\n\n")
+
+    # Memory Information
+    summary_file.write("=" * 40 + " Memory Information " + "=" * 40 + "\n")
+    svmem = psutil.virtual_memory()
+    summary_file.write(f"Total: {get_size(svmem.total)}\n")
+    summary_file.write(f"Available: {get_size(svmem.available)}\n")
+    summary_file.write(f"Used: {get_size(svmem.used)}\n")
+    summary_file.write(f"Percentage: {svmem.percent}%\n\n")
+
+    summary_file.write("=" * 20 + " SWAP " + "=" * 20 + "\n")
+    swap = psutil.swap_memory()
+    summary_file.write(f"Total: {get_size(swap.total)}\n")
+    summary_file.write(f"Free: {get_size(swap.free)}\n")
+    summary_file.write(f"Used: {get_size(swap.used)}\n")
+    summary_file.write(f"Percentage: {swap.percent}%\n\n")
+
+    # Disk Information
+    summary_file.write("=" * 40 + " Disk Information " + "=" * 40 + "\n")
+    summary_file.write("Partitions and Usage:\n")
+    for partition in psutil.disk_partitions():
+        summary_file.write(f"=== Device: {partition.device} ===\n")
+        summary_file.write(f"  Mountpoint: {partition.mountpoint}\n")
+        summary_file.write(f"  File system type: {partition.fstype}\n")
+        try:
+            usage = psutil.disk_usage(partition.mountpoint)
+        except PermissionError:
+            continue
+        summary_file.write(f"  Total Size: {get_size(usage.total)}\n")
+        summary_file.write(f"  Used: {get_size(usage.used)}\n")
+        summary_file.write(f"  Free: {get_size(usage.free)}\n")
+        summary_file.write(f"  Percentage: {usage.percent}%\n")
+
+    dio = psutil.disk_io_counters()
+    if dio is not None:
+        summary_file.write(f"Total read: {get_size(dio.read_bytes)}\n")
+        summary_file.write(f"Total write: {get_size(dio.write_bytes)}\n\n")
+
+    summary_file.write(f"=" * 40 + " Taxa Information " + "=" * 40 + "\n")
+    
+    aug_files = val_files = folders = prev_count_aug = prev_count_val = 0
+    taxa_list = {}
+
+    for root, dirname, filenames in os.walk(f"./{augment_argument_dict.get('aug-root')}"):
         aug_files += len(filenames)
-        folders += len(dirnames)
-    for _, _, filenames in os.walk(f"./{augment_argument_dict.get('val-root')}"):
+        folders += len(dirname)
+        if (root != '././data/augmented/owner-combined'):
+            taxa_list[root.replace('././data/augmented/owner-combined\\taxon-', '')] = [len(filenames)]
+    for root, dirname, filenames in os.walk(f"./{augment_argument_dict.get('val-root')}"):
         val_files += len(filenames)
-        folders += len(dirnames)
+        if (root != '././data/val/owner-combined'):
+            taxa_list[root.replace('././data/val/owner-combined\\taxon-', '')].insert(1, len(filenames))
 
-    summary_file.write(f"\n\nTotal number of classes: {folders}\nTotal number of augmentation files: {aug_files}\nTotal number of validation files: {val_files}")
-    summary_file.write(f"\n\nTaxa included: {folders}\nTotal number of augmentation files: {aug_files}\nTotal number of validation files: {val_files}")
+    summary_file.write(f"Total number of classes: {folders}\nTotal number of training files: {aug_files}\nTotal number of validation files: {val_files}")
+    summary_file.write("\n\nTaxa included (tab-delimited):\n\nTaxa\taug_file_count\tval_file_count\n")
+
+    for key, value in taxa_list.items():
+        summary_file.write(f"{key}\t{value[0]}\t{value[1]}\n")
 
     summary_file.close()
 

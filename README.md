@@ -28,7 +28,7 @@ source venv/bin/activate
 # venv\Scripts\activate
 
 # Install required libraries
-pip install torch torchvision tqdm pillow numpy
+pip install torch torchvision tqdm pillow numpy psutil
 ```
 
 All other imports are from the Python standard library (`os`, `shutil`, `argparse`, etc.).
