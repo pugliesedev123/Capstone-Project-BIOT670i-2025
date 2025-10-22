@@ -192,7 +192,6 @@ def main():
         random.shuffle(combined_images)
         n_total = len(combined_images)
         n_val = n_total // 5
-
         
         # skip classes if they don't exceed the threshold limit
         if (args.threshold != None) and (len(combined_images) < args.threshold or (n_total - n_val) < args.threshold):
@@ -209,24 +208,36 @@ def main():
 
         val_images = combined_images[:n_val]
         train_images = combined_images[n_val:]
-
+        
         aug_taxon_dir = os.path.join(args.aug_root, taxon_key)
         val_taxon_dir = os.path.join(args.val_root, taxon_key)
         os.makedirs(aug_taxon_dir, exist_ok=True)
         os.makedirs(val_taxon_dir, exist_ok=True)
 
-        # Copy validation images as-is so you can fairly measure performance later
+        # Copy validation images as-is
         for src in val_images:
+
+            # new destination with owner attached
+            split_src = src.split("\\")
+            split_src[3] = split_src[1] + "-" + split_src[3]
+            dst = '\\'.join(split_src)
+            
             try:
-                shutil.copy2(src, os.path.join(val_taxon_dir, os.path.basename(src)))
+                shutil.copy2(src, os.path.join(val_taxon_dir, os.path.basename(dst)))
             except Exception as e:
                 print(f"Failed to copy validation image {src}: {e}")
 
         # If a class has been disabled from augmentation, move those training images to the augmentation folder unedited
         if taxon_key.replace("taxon-","") in args.disable_ca:
+
+            # new destination with owner attached
+            split_src = src.split("\\")
+            split_src[3] = split_src[1] + "-" + split_src[3]
+            dst = '\\'.join(split_src)
+
             for src in train_images:
                 try:
-                    shutil.copy2(src, os.path.join(aug_taxon_dir, os.path.basename(src)))
+                    shutil.copy2(src, os.path.join(aug_taxon_dir, os.path.basename(dst)))
                 except Exception as e:
                     print(f"Failed to copy training image {src}: {e}")
             continue
@@ -234,6 +245,7 @@ def main():
         # For each training image, write several augmented versions
         desc = f"Augmenting {taxon_key} (train {len(train_images)}, val {len(val_images)})"
         for img_path in tqdm(train_images, desc=desc, unit="img"):
+            owner = img_path.split("\\")[1]
             try:
                 img = Image.open(img_path).convert("RGB")
             except Exception as e:
@@ -241,12 +253,11 @@ def main():
                 continue        
 
             base, _ = os.path.splitext(os.path.basename(img_path))
-            
             for i in range(args.aug_per_image):
                 try:
                     tensor = augment(img)                 # apply random transforms
                     out = transforms.ToPILImage()(tensor) # back to PIL for saving
-                    out_name = f"{base}_aug_{i}.png"      # print file name plus augmentation number
+                    out_name = f"{owner}-{base}_aug_{i}.png"      # print file name plus augmentation number
                     out.save(os.path.join(aug_taxon_dir, out_name))
                 except Exception as e:
                     print(f"Failed to augment {img_path}: {e}")

@@ -8,6 +8,9 @@ scripts/old/
 output/
 models/
 prediction_results/
+utils/old-runs
+test/
+tests/
 
 # Python noise
 __pycache__/

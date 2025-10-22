@@ -1,0 +1,213 @@
+# importing subprocess module 
+import subprocess
+import shlex
+import datetime
+import glob
+import os
+import psutil
+import platform
+
+
+def generate_arguments(argument_dict dict)
+    commands = []
+
+    # Chatgpt help
+    for argument, value in argument_dict.items()
+        flag = f--{argument}
+        if isinstance(value, bool)
+            if value
+                commands += [flag]
+        elif value is None or value == 
+            continue
+        elif isinstance(value, (list, tuple))
+            for v in value
+                commands += [f{flag} {v}]
+        else
+            commands += [f{flag} {value}]
+        
+    return commands
+
+def get_size(num_bytes, suffix=B)
+    factor = 1024
+    for unit in [, K, M, G, T, P]
+        if num_bytes  factor
+            return f{num_bytes.2f}{unit}{suffix}
+        num_bytes = factor
+    return f{num_bytes.2f}P{suffix}
+
+def main()
+
+    # Define your arguments for the run below, they will be exported to a summary file.
+    # !!!!Ensure you carefully tune your variables, as runtime is long and failure might not occur until well into the run!!!!
+
+    # see defaults on .scriptsaugment_images.py
+    augment_argument_dict = {
+        input-root .datatrain,                         # declare your target input training folder
+        input-config .taxa-config.txt,                  # declare your target taxa-config file (use with include-config-classes-only)
+        val-root .datavalowner-combined,              # declare your target validation root folder
+        aug-root .dataaugmentedowner-combined,        # declare your target augmentation root folder
+        aug-per-image 3,                                   # declare a non-zero integer
+        seed 42,                                           # declare a non-zero integer
+        console-print True,                                # mark true or false
+        exclude-classes False,                             # mark true or false
+        include-config-classes-only False,                 # mark true or false
+        threshold None,                                    # declare a non-zero integer
+        disable-tf [],                                     # include transforms you'd like to exclude ['rotate', 'scale', 'zoom', 'horizontalflip', 'verticalflip', 'grayscale', 'equalize', 'sharpen']
+        disable-ca []                                      # include classes you'd like to exclude ['exogyra_sp', 'pycnodonte_sp', 'isurus_sp', ...]
+    }
+
+    # see defaults on .scriptstrain_model.py
+    train_argument_dict = {
+        use-augmented True,                    # mark true or false
+        console-print False,                   # mark true or false
+        use-pre-train True,                    # mark true or false
+        seed 42,                               # declare a non-zero integer
+        batch-size 16,                         # declare a non-zero integer
+        epochs 5,                              # declare a non-zero integer
+        input-config taxa-config.txt,        # declare your target taxa-config file
+        model-path None,                       # declare your target model weights path or leave None
+        index-path None,                       # declare your target embedding index path or leave None
+        model resnet18,                      # choose one resnet18, resnet34, resnet50, vgg16, densenet121
+        threshold None,                        # declare a non-zero integer or leave None
+        exclude-classes False,                 # mark true or false
+        include-config-classes-only False      # mark true or false
+    }
+
+    # see defaults on .scriptspredict_image.py
+    predict_argument_dict = {
+        example-dir .example,                     # required path to your example images folder (recurses)
+        console-print False,                         # mark true or false
+        top-predictions 3,                           # declare a non-zero integer
+        neighbors 3,                                 # declare a non-zero integer
+        model-path modelsfossil_resnet18.pt,      # declare your trained weights file
+        class-names modelsclass_names.json,       # declare your class_names.json path
+        index-path modelstrain_index_resnet18.pt, # declare your training feature index or leave as placeholder
+        output-dir output                          # declare your target folder for the CSV
+    }
+
+    start_time = datetime.datetime.now()
+
+    subprocess.run([python, .utilstaxa_for_config.py]) #may need to export the taxa used below
+
+    # Run Augmentation Script
+
+    augment_images_commands = generate_arguments(augment_argument_dict)
+    augment_argument_summary = fThe following arguments were used to run '.scriptsaugment_images.py' on {datetime.datetime.now()}n{augment_images_commands}
+    flat_aug_args = shlex.split( .join(augment_images_commands))
+
+    subprocess.run([python, .scriptsaugment_images.py, flat_aug_args], check=True)
+
+    # Run Training Script
+
+    training_commands = generate_arguments(train_argument_dict)
+    training_summary = fThe following arguments were used to run '.scriptstrain_model.py' on {datetime.datetime.now()}n{training_commands}
+    flat_train_args = shlex.split( .join(training_commands))
+
+    subprocess.run([python, .scriptstrain_model.py, flat_train_args], check=True)
+
+    # Run Prediction Script
+
+    prediction_commands = generate_arguments(predict_argument_dict)
+    prediction_summary = fThe following arguments were used to run '.scriptspredict_image.py' on {datetime.datetime.now()}n{prediction_commands}
+    flat_predic_args = shlex.split( .join(prediction_commands))
+
+    subprocess.run([python, .scriptspredict_image.py, flat_predic_args], check=True)
+
+    end_time = datetime.datetime.now()
+    duration = end_time - start_time
+
+    list_of_files = glob.glob(f.{predict_argument_dict.get('output-dir', 'output')}.csv) #  means all if need specific format then .csv
+    latest_file = max(list_of_files, key=os.path.getctime)
+
+    summary_file = open(latest_file.replace(predictions, summary).replace(.csv, .txt), w)
+    summary_file.write(f=  40 +  Prediction Summary  + =  40 + fnOutput File {latest_file}nn{augment_argument_summary}nn{training_summary}nn{prediction_summary})
+    summary_file.write(fnnTotal time elapsed {duration}nn)
+
+    summary_file.write(=  40 +  System Information  + =  40 + n)
+    uname = platform.uname()
+    summary_file.write(fSystem {uname.system}n)
+    summary_file.write(fNode Name {uname.node}n)
+    summary_file.write(fRelease {uname.release}n)
+    summary_file.write(fVersion {uname.version}n)
+    summary_file.write(fMachine {uname.machine}n)
+    summary_file.write(fProcessor {uname.processor}nn)
+
+    # CPU Information
+    summary_file.write(=  40 +  CPU Info  + =  40 + n)
+    summary_file.write(fPhysical cores {psutil.cpu_count(logical=False)}n)
+    summary_file.write(fTotal cores {psutil.cpu_count(logical=True)}n)
+
+    cpufreq = psutil.cpu_freq()
+    if cpufreq is not None
+        summary_file.write(fMax Frequency {cpufreq.max.2f}Mhzn)
+        summary_file.write(fMin Frequency {cpufreq.min.2f}Mhzn)
+        summary_file.write(fCurrent Frequency {cpufreq.current.2f}Mhzn)
+    else
+        summary_file.write(CPU frequency unavailablen)
+
+    summary_file.write(CPU Usage Per Coren)
+    for i, percentage in enumerate(psutil.cpu_percent(percpu=True, interval=1))
+        summary_file.write(fCore {i} {percentage}%n)
+    summary_file.write(fTotal CPU Usage {psutil.cpu_percent()}%nn)
+
+    # Memory Information
+    summary_file.write(=  40 +  Memory Information  + =  40 + n)
+    svmem = psutil.virtual_memory()
+    summary_file.write(fTotal {get_size(svmem.total)}n)
+    summary_file.write(fAvailable {get_size(svmem.available)}n)
+    summary_file.write(fUsed {get_size(svmem.used)}n)
+    summary_file.write(fPercentage {svmem.percent}%nn)
+
+    summary_file.write(=  20 +  SWAP  + =  20 + n)
+    swap = psutil.swap_memory()
+    summary_file.write(fTotal {get_size(swap.total)}n)
+    summary_file.write(fFree {get_size(swap.free)}n)
+    summary_file.write(fUsed {get_size(swap.used)}n)
+    summary_file.write(fPercentage {swap.percent}%nn)
+
+    # Disk Information
+    summary_file.write(=  40 +  Disk Information  + =  40 + n)
+    summary_file.write(Partitions and Usagen)
+    for partition in psutil.disk_partitions()
+        summary_file.write(f=== Device {partition.device} ===n)
+        summary_file.write(f  Mountpoint {partition.mountpoint}n)
+        summary_file.write(f  File system type {partition.fstype}n)
+        try
+            usage = psutil.disk_usage(partition.mountpoint)
+        except PermissionError
+            continue
+        summary_file.write(f  Total Size {get_size(usage.total)}n)
+        summary_file.write(f  Used {get_size(usage.used)}n)
+        summary_file.write(f  Free {get_size(usage.free)}n)
+        summary_file.write(f  Percentage {usage.percent}%n)
+
+    dio = psutil.disk_io_counters()
+    if dio is not None
+        summary_file.write(fTotal read {get_size(dio.read_bytes)}n)
+        summary_file.write(fTotal write {get_size(dio.write_bytes)}nn)
+
+    summary_file.write(f=  40 +  Taxa Information  + =  40 + n)
+    
+    aug_files = val_files = folders = prev_count_aug = prev_count_val = 0
+    taxa_list = {}
+
+    for root, dirname, filenames in os.walk(f.{augment_argument_dict.get('aug-root')})
+        aug_files += len(filenames)
+        folders += len(dirname)
+        if (root != '..dataaugmentedowner-combined')
+            taxa_list[root.replace('..dataaugmentedowner-combinedtaxon-', '')] = [len(filenames)]
+    for root, dirname, filenames in os.walk(f.{augment_argument_dict.get('val-root')})
+        val_files += len(filenames)
+        if (root != '..datavalowner-combined')
+            taxa_list[root.replace('..datavalowner-combinedtaxon-', '')].insert(1, len(filenames))
+
+    summary_file.write(fTotal number of classes {folders}nTotal number of training files {aug_files}nTotal number of validation files {val_files})
+    summary_file.write(nnTaxa included (tab-delimited)nnTaxataug_file_counttval_file_countn)
+
+    for key, value in taxa_list.items()
+        summary_file.write(f{key}t{value[0]}t{value[1]}n)
+
+    summary_file.close()
+
+if __name__ == __main__
+    main()
