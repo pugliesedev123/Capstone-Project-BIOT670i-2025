@@ -51,7 +51,7 @@ def main():
         "console-print": True,                                # mark true or false
         "exclude-classes": False,                             # mark true or false
         "include-config-classes-only": False,                 # mark true or false
-        "threshold": None,                                    # declare a non-zero integer
+        "threshold": 30,                                    # declare a non-zero integer
         "disable-tf": [],                                     # include transforms you'd like to exclude ['rotate', 'scale', 'zoom', 'horizontalflip', 'verticalflip', 'grayscale', 'equalize', 'sharpen']
         "disable-ca": []                                      # include classes you'd like to exclude ['exogyra_sp', 'pycnodonte_sp', 'isurus_sp', ...]
     }
@@ -66,7 +66,6 @@ def main():
         "epochs": 5,                              # declare a non-zero integer
         "input-config": "taxa-config.txt",        # declare your target taxa-config file
         "model-path": None,                       # declare your target model weights path or leave None
-        "index-path": None,                       # declare your target embedding index path or leave None
         "model": "resnet18",                      # choose one: resnet18, resnet34, resnet50, vgg16, densenet121
         "threshold": None,                        # declare a non-zero integer or leave None
         "exclude-classes": False,                 # mark true or false
@@ -81,7 +80,6 @@ def main():
         "neighbors": 3,                                 # declare a non-zero integer
         "model-path": "models/fossil_resnet18.pt",      # declare your trained weights file
         "class-names": "models/class_names.json",       # declare your class_names.json path
-        "index-path": "models/train_index_resnet18.pt", # declare your training feature index or leave as placeholder, comment this line out if using vgg or denesnet
         "output-dir": "output"                          # declare your target folder for the CSV
     }
 
@@ -112,8 +110,6 @@ def main():
     flat_predic_args = shlex.split(" ".join(prediction_commands))
 
     subprocess.run(["python", "./scripts/predict_image.py", *flat_predic_args], check=True)
-
-
 
     end_time = datetime.datetime.now()
     duration = end_time - start_time

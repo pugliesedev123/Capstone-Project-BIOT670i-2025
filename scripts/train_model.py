@@ -308,7 +308,6 @@ def main():
     parser.add_argument('--epochs', type=int, default=5, help='Number of training epochs')
     parser.add_argument("--input-config", default="taxa-config.txt", help="Taxa file to guide for your augmentation")
     parser.add_argument('--model-path', type=str, default=None, help='Path to save model weights')
-    parser.add_argument('--index-path', type=str, default=None, help='Path to save training embedding index')
     parser.add_argument("--model", type=str, default='resnet18', choices=["resnet18", "resnet34", "resnet50", "vgg16", "densenet121"], help="Determines which model to train")
     parser.add_argument("--threshold", type=int, help="Generate class balance by defining a threshold that will remove classes if they do not an image count that exceeds this number. Randomly excise images from classes that exceed this number until they are equal to the threshold.")
     parser.add_argument("--exclude-classes", action='store_true', help="Remove select classes marked with an '-' from taxa-config")
@@ -322,16 +321,6 @@ def main():
     else:
         path_to_model = f"models/fossil_{args.model}.pt"
         #print(f"No model specified, will be stored at:\n{path_to_model}")
-
-    # Indexing is only supported for resnets
-    if(args.model in ["resnet18", "resnet34", "resnet50"]):
-        # Location where train_index will be stored
-        if args.index_path:
-            path_to_index = args.index_path
-            #print(f"Index path supplied, index model will be stored at:\n{path_to_index}")
-        else:
-            path_to_index = f"models/train_index_{args.model}.pt"
-        #print(f"No index path supplied, index model will be stored at:\n{path_to_index}")
 
     # Apply seed as early as possible so all randomness is controlled
     set_seed(args.seed)
@@ -512,46 +501,6 @@ def main():
     # Save trained weights so you can load them later for prediction
     torch.save(model.state_dict(), path_to_model)
     print(f"[INFO] Model saved to {path_to_model}")
-
-    if(args.model in ["resnet18", "resnet34", "resnet50"]):
-        # Use deterministic preprocessing to index the training set
-        index_loader = DataLoader(
-            datasets.ImageFolder(train_dir, transform=val_transforms),
-            batch_size=max(64, args.batch_size), shuffle=False
-        )
-
-        # Collect features, labels, and original file paths
-        all_vecs = []
-        all_labels = []
-        all_paths = [p for p, _ in index_loader.dataset.samples]
-        class_to_idx = index_loader.dataset.class_to_idx
-        idx_to_class = {v: k for k, v in class_to_idx.items()}
-
-        with torch.no_grad():
-            for imgs, labels in tqdm(index_loader, desc="Indexing", unit="batch"):
-                imgs = imgs.to(device)
-                vecs = embedder(imgs)  # shape [B, 512]
-                vecs = torch.nn.functional.normalize(vecs, dim=1)  # unit length for cosine similarity
-                all_vecs.append(vecs.cpu())
-                all_labels.extend(labels.tolist())
-
-        # Stack all feature tensors into one big matrix
-        embeddings = torch.cat(all_vecs, dim=0) if all_vecs else torch.empty(0, 512)
-
-        # Package the index for saving
-        index_obj = {
-            "embeddings": embeddings,  # FloatTensor [N, 512]
-            "labels": torch.tensor(all_labels),  # LongTensor [N]
-            "paths": all_paths,  # list[str]
-            "class_to_idx": class_to_idx,  # dict
-            "idx_to_class": idx_to_class,  # dict
-        }
-
-        # Save the index for use by the prediction script
-        os.makedirs(os.path.dirname(path_to_index) or ".", exist_ok=True)
-        torch.save(index_obj, path_to_index)
-        print(f"[INFO] Saved training index to {path_to_index}")
-
 
 if __name__ == "__main__":
     main()

@@ -63,13 +63,8 @@ def main():
     parser.add_argument("--neighbors", type=int, default=3, help="How many closest training images to record.")
     parser.add_argument("--model-path", default="models/fossil_resnet18.pt", help="Path to the trained model weights file.")
     parser.add_argument("--class-names", default="models/class_names.json", help="Path to class_names.json file.")
-    parser.add_argument("--index-path", default="", help="Path to the saved training feature index.")
     parser.add_argument("--output-dir", default="output", help="Folder where the CSV will be saved.")
     args = parser.parse_args()
-
-    args.index_path = Path(args.index_path) if args.index_path else Path("")
-    has_index = args.index_path.is_file()
-
 
     # Pick GPU if available, else CPU
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -128,19 +123,6 @@ def main():
 
     embedder = load_embedder_from_classifier(args.model_path, state_for_embedder, device)
 
-
-    if(has_index):
-        # Load the saved training feature index
-        index_obj = torch.load(args.index_path, map_location="cpu")
-        index_embeddings = index_obj["embeddings"].float()  # shape [N, 512], N is number of training images
-        index_labels = index_obj["labels"].long()           # class id for each embedding
-        index_paths = index_obj["paths"]                    # file path for each training image
-        idx_to_class = index_obj.get("idx_to_class", None)
-        if idx_to_class is None:
-            # If not stored, build it from the inverse of class_to_idx
-            class_to_idx = index_obj["class_to_idx"]
-            idx_to_class = {v: k for k, v in class_to_idx.items()}
-
     if "resnet" in args.model_path or "densenet121" in args.model_path:
         IMAGENET_MEAN = [0.485, 0.456, 0.406]
         IMAGENET_STD = [0.229, 0.224, 0.225]
@@ -175,14 +157,6 @@ def main():
             f"class_prediction_{i}_IsAccurate"
         ]
 
-    if(has_index):
-        # Columns for nearest neighbor results
-        for k in range(1, args.neighbors + 1):
-            header += [
-                f"nearest_neighbor_{k}_label",
-                f"nearest_neighbor_{k}_cosine_similarity", # Must be able to explain this value
-                f"nearest_neighbor_{k}_path"
-            ]
     rows = []
 
     if not os.path.isdir(args.example_dir):
@@ -241,26 +215,6 @@ def main():
                     if(args.console_print):
                         print(f"{i+1}. {predicted_class} ({confidence_pct:.2f}% confidence)")
                     row += [predicted_class, f"{confidence_pct:.2f}", class_accurate]
-
-                # 2) Find nearest neighbors from the training index
-                # First get features for the query image using the embedder
-                q = embedder(x).squeeze(0)            # shape [512]
-                q = F.normalize(q, dim=0)             # make length 1 so cosine works as dot
-
-                # Compute cosine similarity to all training features in the index
-                # This is a dot product since both sides are normalized
-                if(has_index):
-                    sims = torch.matmul(index_embeddings, q.cpu())  # shape [N]
-                    # Pick the top K closest matches
-                    vals, inds = torch.topk(sims, k=min(args.neighbors, sims.numel()), largest=True)
-
-                    # Add neighbor info to the row
-                    for s, i_idx in zip(vals.tolist(), inds.tolist()):
-                        lbl_idx = int(index_labels[i_idx])          # class id of the neighbor
-                        lbl = idx_to_class.get(lbl_idx, str(lbl_idx))  # class name of the neighbor
-                        path = index_paths[i_idx]                   # file path to the neighbor image
-                        row += [lbl, f"{s:.6f}", path]
-
                 rows.append(row)
 
 
