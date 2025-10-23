@@ -59,7 +59,7 @@ def main():
     # see defaults on ./scripts/train_model.py
     train_argument_dict = {
         "use-augmented": True,                    # mark true or false
-        "console-print": False,                   # mark true or false
+        "console-print": True,                   # mark true or false
         "use-pre-train": True,                    # mark true or false
         "seed": 42,                               # declare a non-zero integer
         "batch-size": 16,                         # declare a non-zero integer
@@ -75,19 +75,19 @@ def main():
 
     # see defaults on ./scripts/predict_image.py
     predict_argument_dict = {
-        "example-dir": "./example",                     # required: path to your example images folder (recurses)
+        "example-dir": "./tests",                     # required: path to your example images folder (recurses)
         "console-print": False,                         # mark true or false
         "top-predictions": 3,                           # declare a non-zero integer
         "neighbors": 3,                                 # declare a non-zero integer
         "model-path": "models/fossil_resnet18.pt",      # declare your trained weights file
         "class-names": "models/class_names.json",       # declare your class_names.json path
-        "index-path": "models/train_index_resnet18.pt", # declare your training feature index or leave as placeholder
+        "index-path": "models/train_index_resnet18.pt", # declare your training feature index or leave as placeholder, comment this line out if using vgg or denesnet
         "output-dir": "output"                          # declare your target folder for the CSV
     }
 
     start_time = datetime.datetime.now()
 
-    subprocess.run(["python", "./utils/taxa_for_config.py"]) #may need to export the taxa used below
+    subprocess.run(["python", "./utils/taxa_for_config.py"]) # comment out this line if you are using a customized taxa list for the run
 
     # Run Augmentation Script
 
@@ -112,6 +112,8 @@ def main():
     flat_predic_args = shlex.split(" ".join(prediction_commands))
 
     subprocess.run(["python", "./scripts/predict_image.py", *flat_predic_args], check=True)
+
+
 
     end_time = datetime.datetime.now()
     duration = end_time - start_time
