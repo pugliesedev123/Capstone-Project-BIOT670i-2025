@@ -5,7 +5,7 @@ print("This script will traverse down 3 levels i.e. Top folder > Subfolder (owne
 print("It will also remove empty taxon folders from the existing owner\\* subfolders")
 
 
-if os.name = "posix":
+if os.name == "posix":
     #For Mac
     user_path = "data/train"
     pattern = re.compile(r"[\s\S]*/data/train/")
