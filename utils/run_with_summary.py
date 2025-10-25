@@ -51,7 +51,7 @@ def main():
         "console-print": True,                                # mark true or false
         "exclude-classes": False,                             # mark true or false
         "include-config-classes-only": False,                 # mark true or false
-        "threshold": 30,                                    # declare a non-zero integer
+        "threshold": None,                                    # declare a non-zero integer
         "disable-tf": [],                                     # include transforms you'd like to exclude ['rotate', 'scale', 'zoom', 'horizontalflip', 'verticalflip', 'grayscale', 'equalize', 'sharpen']
         "disable-ca": []                                      # include classes you'd like to exclude ['exogyra_sp', 'pycnodonte_sp', 'isurus_sp', ...]
     }
