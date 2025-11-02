@@ -7,11 +7,13 @@ import os
 import psutil
 import platform
 
+# For subprocess(), ensure "python" is updated to your system's Python alias
+# Be mindful of \\ versus / depending on your system's file structure
 
 def generate_arguments(argument_dict: dict):
     commands = []
 
-    # Chatgpt help
+    # Generate a list of commands for shlex strings. 
     for argument, value in argument_dict.items():
         flag = f"--{argument}"
         if isinstance(value, bool):
@@ -27,6 +29,7 @@ def generate_arguments(argument_dict: dict):
         
     return commands
 
+# Calculate disk size.
 def get_size(num_bytes, suffix="B"):
     factor = 1024
     for unit in ["", "K", "M", "G", "T", "P"]:
@@ -83,6 +86,7 @@ def main():
         "output-dir": "output"                          # declare your target folder for the CSV
     }
 
+    # Start run timer for run duration.
     start_time = datetime.datetime.now()
 
     subprocess.run(["python3", "./utils/taxa_for_config.py"]) # comment out this line if you are using a customized taxa list for the run
@@ -111,16 +115,19 @@ def main():
 
     subprocess.run(["python3", "./scripts/predict_image.py", *flat_predic_args], check=True)
 
+    # End timer and calculated run duration.
     end_time = datetime.datetime.now()
     duration = end_time - start_time
 
-    list_of_files = glob.glob(f"./{predict_argument_dict.get('output-dir', 'output')}/*.csv") # * means all if need specific format then *.csv
+    list_of_files = glob.glob(f"./{predict_argument_dict.get('output-dir', 'output')}/*.csv")
     latest_file = max(list_of_files, key=os.path.getctime)
 
+    # Push run summary information including arguments, output file(s), and time elapsed.
     summary_file = open(latest_file.replace("predictions", "summary").replace(".csv", ".txt"), "w")
     summary_file.write(f"=" * 40 + " Prediction Summary: " + "=" * 40 + f"\nOutput File: {latest_file}\n\n{augment_argument_summary}\n\n{training_summary}\n\n{prediction_summary}")
     summary_file.write(f"\n\nTotal time elapsed: {duration}\n\n")
 
+    # Write System Information,
     summary_file.write("=" * 40 + " System Information " + "=" * 40 + "\n")
     uname = platform.uname()
     summary_file.write(f"System: {uname.system}\n")
@@ -130,7 +137,7 @@ def main():
     summary_file.write(f"Machine: {uname.machine}\n")
     summary_file.write(f"Processor: {uname.processor}\n\n")
 
-    # CPU Information
+    # CPU Information,
     summary_file.write("=" * 40 + " CPU Info " + "=" * 40 + "\n")
     summary_file.write(f"Physical cores: {psutil.cpu_count(logical=False)}\n")
     summary_file.write(f"Total cores: {psutil.cpu_count(logical=True)}\n")
@@ -148,7 +155,7 @@ def main():
         summary_file.write(f"Core {i}: {percentage}%\n")
     summary_file.write(f"Total CPU Usage: {psutil.cpu_percent()}%\n\n")
 
-    # Memory Information
+    # Memory Information,
     summary_file.write("=" * 40 + " Memory Information " + "=" * 40 + "\n")
     svmem = psutil.virtual_memory()
     summary_file.write(f"Total: {get_size(svmem.total)}\n")
@@ -163,7 +170,7 @@ def main():
     summary_file.write(f"Used: {get_size(swap.used)}\n")
     summary_file.write(f"Percentage: {swap.percent}%\n\n")
 
-    # Disk Information
+    # Disk Information,
     summary_file.write("=" * 40 + " Disk Information " + "=" * 40 + "\n")
     summary_file.write("Partitions and Usage:\n")
     for partition in psutil.disk_partitions():
@@ -179,13 +186,14 @@ def main():
         summary_file.write(f"  Free: {get_size(usage.free)}\n")
         summary_file.write(f"  Percentage: {usage.percent}%\n")
 
+    # and Read/Write Information.
     dio = psutil.disk_io_counters()
     if dio is not None:
         summary_file.write(f"Total read: {get_size(dio.read_bytes)}\n")
         summary_file.write(f"Total write: {get_size(dio.write_bytes)}\n\n")
 
+    # Taxa information.
     summary_file.write(f"=" * 40 + " Taxa Information " + "=" * 40 + "\n")
-    
     aug_files = val_files = folders = prev_count_aug = prev_count_val = 0
     taxa_list = {}
 
@@ -199,9 +207,9 @@ def main():
         if (root != '././data/val/owner-combined'):
             taxa_list[root.replace('././data/val/owner-combined/taxon-', '')].insert(1, len(filenames))
 
+    # Write taxa counts and number.
     summary_file.write(f"Total number of classes: {folders}\nTotal number of training files: {aug_files}\nTotal number of validation files: {val_files}")
     summary_file.write("\n\nTaxa included (tab-delimited):\n\nTaxa\taug_file_count\tval_file_count\n")
-
     for key, value in taxa_list.items():
         summary_file.write(f"{key}\t{value[0]}\t{value[1]}\n")
 

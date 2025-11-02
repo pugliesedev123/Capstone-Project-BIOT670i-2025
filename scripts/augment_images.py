@@ -10,11 +10,8 @@ from torchvision import transforms
 import torchvision.transforms.functional as F
 import argparse
 
-# We keep imports at top. Everything else happens in main().
-
-
+# Find the average color around the outer border of the image to apply.
 def edge_fill(img: Image.Image):
-    # Find the average color around the outer border of the image to apply.
     wimg = img if img.mode in ("RGB", "L") else img.convert("RGB")
     a = np.asarray(wimg)
 
@@ -25,10 +22,9 @@ def edge_fill(img: Image.Image):
         edges = np.concatenate([a[0, :, :], a[-1, :, :], a[:, 0, :], a[:, -1, :]], axis=0)
         return tuple(int(v) for v in np.round(edges.mean(axis=0)))
 
-
 def pad_to_square(img: Image.Image, fill=None):
     # Make the image square by adding borders.
-    # If no fill color is given, we compute one from the image edges.
+    # If no fill color is given, compute one from the image edges.
     w, h = img.size
     if w == h:
         return img
@@ -42,11 +38,11 @@ def pad_to_square(img: Image.Image, fill=None):
 
 
 def geom_transform(img: Image.Image, degrees=5, scale=(0.8, 1.2), out_size=256, expand=True, disabled_args=[]):
-    # Rotate slightly
-    # Scale slightly (zoom in or out)
-    # Pad to make square
-    # Resize to fixed size
-    # Use edge color as fill to avoid black borders
+    # Rotate slightly,
+    # Scale slightly (zoom in or out),
+    # Pad to make square,
+    # Resize to fixed size,
+    # Use edge color as fill to avoid black borders.
     fill = edge_fill(img)
     angle = random.uniform(-degrees, degrees)
     sc = random.uniform(*scale)
@@ -74,6 +70,7 @@ def norm_class_key(name: str) -> str:
 
 
 def main():
+
     # Command-Line Arguments
     parser = argparse.ArgumentParser(description="Combine owners into a single dataset, send 1/5 to val, and save augmented images for the rest")
     parser.add_argument("--input-root", default="data/train", help="Root with owner-* subdirectories")
@@ -90,7 +87,7 @@ def main():
     parser.add_argument("--disable-ca", action='append', type=str.lower, default=[], help="Disable specific class for augmentation (eg. --disable-ca exogyra_sp)")
     args = parser.parse_args()
 
-    # Apply seed as early as possible so all randomness is controlled
+    # Apply seed as early as possible so all randomness is controlled.
     random.seed(args.seed)
     torch.manual_seed(args.seed)
 
@@ -101,7 +98,6 @@ def main():
 
     # Define the image augmentation pipeline.
     # We do a small geometric transform, then a few light appearance tweaks, then to tensor.
-    # Used ChatGPT to get this list-comprehension logic
     on = lambda n: n not in args.disable_tf
     augment = transforms.Compose([operation for operation in [
         transforms.Lambda(lambda img: geom_transform(img, degrees=5, scale=(0.8, 1.2), out_size=256, disabled_args=args.disable_tf)),
@@ -125,8 +121,8 @@ def main():
     taxon_exclusion_list = []
     taxon_inclusion_list = []
 
-    # If arguments that define subset of classes using taxa-config.txt are present:
-    # seek those files out and append those classes to the above lists
+    # If arguments that define subset of classes using taxa-config.txt are present,
+    # seek those files out and append those classes to the above lists.
     if(args.include_config_classes_only or args.exclude_classes):
         if(os.path.isfile(args.input_config)):
             file = open(args.input_config, "r")
@@ -144,6 +140,7 @@ def main():
             print(f"[INFO] The file {args.input_config} does not live in the directory. Run utils/taxa_for_config.py to generate.")
             exit()
     
+    # Print results from removal/inclusion.
     if args.include_config_classes_only:
         print("\n[INFO] Including only the the following taxa for classification:")
         for name in taxon_inclusion_list:
@@ -153,10 +150,10 @@ def main():
         for name in taxon_exclusion_list:
             print(f"  - {name}")
 
-    # Scan owner-* folders and collect all images by their class folder.
-    # This loop will exclude classes if they are explicetely removed via taxa-config
-    taxon_to_images = {}  
+    taxon_to_images = {}
 
+    # Scan owner-* folders and collect all images by their class folder.
+    # This loop will exclude classes if they are explicitly removed via taxa-config filtering.
     for owner_folder in os.listdir(args.input_root):
         owner_path = os.path.join(args.input_root, owner_folder)
         if not (os.path.isdir(owner_path) and owner_folder.startswith("owner-")):
@@ -170,16 +167,16 @@ def main():
             elif(args.include_config_classes_only and entry.replace("taxon-","") not in taxon_inclusion_list):
                 continue
 
-            taxon_key = norm_class_key(entry)
-            taxon_to_images.setdefault(taxon_key, [])
+            
+            taxon_key = norm_class_key(entry)           # Collect taxon identity,
+            taxon_to_images.setdefault(taxon_key, [])   
 
-            # Walk nested folders and collect images for this class
             for root, _, files in os.walk(entry_path):
                 for f in files:
                     if f.lower().endswith(IMAGE_EXTS):
-                        taxon_to_images[taxon_key].append(os.path.join(root, f))
+                        taxon_to_images[taxon_key].append(os.path.join(root, f)) # Collect taxon images.
 
-    # ---------- process each taxon ----------
+    # Process each taxon.
     # For each class split 1/5 to val and augment the remaining 4/5
     # If not >= 20 images, skip and report
     skipped = []
@@ -193,12 +190,12 @@ def main():
         n_total = len(combined_images)
         n_val = n_total // 5
         
-        # skip classes if they don't exceed the threshold limit
+        # Skip classes if they don't exceed the threshold limit.
         if (args.threshold != None) and (len(combined_images) < args.threshold or (n_total - n_val) < args.threshold):
             threshold_skipped.append((taxon_key, len(combined_images)))
             continue
         
-        # if classes exceed the threshold limit, remove some of the combined images until the threshold is reached
+        # If classes exceed the threshold limit, remove some of the combined images until the threshold is reached.
         if (args.threshold != None) and  (n_total > args.threshold):
             for delta in range(n_total - args.threshold):
                 random_element = random.choice(combined_images)
@@ -214,10 +211,10 @@ def main():
         os.makedirs(aug_taxon_dir, exist_ok=True)
         os.makedirs(val_taxon_dir, exist_ok=True)
 
-        # Copy validation images as-is
+        # Copy validation images as-is.
         for src in val_images:
 
-            # new destination with owner attached
+            # New destination with owner attached
             split_src = src.split("\\")
             split_src[3] = split_src[1] + "-" + split_src[3]
             dst = '\\'.join(split_src)
@@ -227,10 +224,10 @@ def main():
             except Exception as e:
                 print(f"Failed to copy validation image {src}: {e}")
 
-        # If a class has been disabled from augmentation, move those training images to the augmentation folder unedited
+        # If a class has been disabled from augmentation, move those training images to the augmentation folder as-is.
         if taxon_key.replace("taxon-","") in args.disable_ca:
 
-            # new destination with owner attached
+            # New destination with owner attached to the image file.
             split_src = src.split("\\")
             split_src[3] = split_src[1] + "-" + split_src[3]
             dst = '\\'.join(split_src)
@@ -242,9 +239,10 @@ def main():
                     print(f"Failed to copy training image {src}: {e}")
             continue
 
-        # For each training image, write several augmented versions
+        # For each training image, write several augmented versions.
         desc = f"Augmenting {taxon_key} (train {len(train_images)}, val {len(val_images)})"
         for img_path in tqdm(train_images, desc=desc, unit="img"):
+
             owner = img_path.split("\\")[1]
             try:
                 img = Image.open(img_path).convert("RGB")
@@ -255,9 +253,9 @@ def main():
             base, _ = os.path.splitext(os.path.basename(img_path))
             for i in range(args.aug_per_image):
                 try:
-                    tensor = augment(img)                 # apply random transforms
-                    out = transforms.ToPILImage()(tensor) # back to PIL for saving
-                    out_name = f"{owner}-{base}_aug_{i}.png"      # print file name plus augmentation number
+                    tensor = augment(img)                               # Apply random transforms,
+                    out = transforms.ToPILImage()(tensor)               # Convert back to PIL for saving,
+                    out_name = f"{owner}-{base}_aug_{i}.png"            # and create file name including augmentation number.
                     out.save(os.path.join(aug_taxon_dir, out_name))
                 except Exception as e:
                     print(f"Failed to augment {img_path}: {e}")

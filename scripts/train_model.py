@@ -13,7 +13,10 @@ from PIL import Image
 import torchvision.transforms.functional as F
 import numpy as np
 
+# Define valid image extensions as a global variable.
+IMAGE_EXTS = (".png", ".jpg", ".jpeg")
 
+# Define seed for the run.
 def set_seed(seed: int):
     random.seed(seed)
     np.random.seed(seed)
@@ -23,17 +26,19 @@ def set_seed(seed: int):
 
 
 def pad_to_square(img: Image.Image):
-    # Add padding so width equals height
-    # This centers the original image in a square canvas
+    # Add padding so width equals height,
+    # centering the original image in a square canvas.
     w, h = img.size
     max_side = max(w, h)
     pad_w = (max_side - w) // 2
     pad_h = (max_side - h) // 2
     padding = (pad_w, pad_h, max_side - w - pad_w, max_side - h - pad_h)
-    # Fill uses black here. You can change this if desired.
+
+    # Use black fill, eventually import augment_images.py style fill here.
     return F.pad(img, padding, fill=0, padding_mode='constant')
 
 
+# Utility function to create unique path.
 def unique_path(path: str) -> str:
     if not os.path.exists(path):
         return path
@@ -45,32 +50,7 @@ def unique_path(path: str) -> str:
         cand = f"{root}_{i}{ext}"
     return cand
 
-
-IMAGE_EXTS = (".png", ".jpg", ".jpeg")
-
-
-def ensure_min_val_samples(train_dir: str, val_dir: str, min_per_class: int = 1):
-    os.makedirs(val_dir, exist_ok=True)
-    for img_class in sorted(d for d in os.listdir(train_dir) if os.path.isdir(os.path.join(train_dir, d))):
-        timg_class = os.path.join(train_dir, img_class)
-        vimg_class = os.path.join(val_dir, img_class)
-        os.makedirs(vimg_class, exist_ok=True)
-        val_imgs = [f for f in os.listdir(vimg_class) if f.lower().endswith(IMAGE_EXTS)]
-        if len(val_imgs) >= min_per_class:
-            continue
-        train_imgs = [f for f in os.listdir(timg_class) if f.lower().endswith(IMAGE_EXTS)]
-        if not train_imgs:
-            continue
-        random.shuffle(train_imgs)
-        need = min_per_class - len(val_imgs)
-        for f in train_imgs[:need]:
-            src = os.path.join(timg_class, f)
-            dst = os.path.join(vimg_class, f)
-            dst = unique_path(dst)
-            shutil.copy2(src, dst)
-
-
-# --- Helper to build combined train and move split into val without touching data/train ---
+# Large helper function to build combined train and move split into val without touching data/train.
 def build_combined_and_val(input_config: str, exclude_classes: bool, include_config_classes_only: bool, console_print: bool, threshold: int, source_root: str, combined_train_dir: str, val_dir: str, min_total_per_class: int = 20, split_frac: float = 0.20):
     # Clean rebuild
     if os.path.exists(combined_train_dir):
@@ -87,8 +67,8 @@ def build_combined_and_val(input_config: str, exclude_classes: bool, include_con
     taxon_exclusion_list = []
     taxon_inclusion_list = []
 
-    # If arguments that define subset of classes using taxa-config are present:
-    # seek those files out and append those classes to the above lists
+    # If arguments that define subset of classes using taxa-config are present,
+    # seek those files out and append those classes to the above lists.
     if(include_config_classes_only or exclude_classes):
         if(os.path.isfile(input_config)):
             file = open(input_config, "r")
@@ -106,6 +86,7 @@ def build_combined_and_val(input_config: str, exclude_classes: bool, include_con
             print(f"[INFO] The file {input_config} does not live in the directory. Run utils/taxa_for_config.py to generate.")
             exit()
     
+    # Print results from removal/inclusion.
     if include_config_classes_only:
         print("\n[INFO] Including only the the following taxa for classification:")
         for name in taxon_inclusion_list:
@@ -115,7 +96,8 @@ def build_combined_and_val(input_config: str, exclude_classes: bool, include_con
         for name in taxon_exclusion_list:
             print(f"  - {name}")
 
-    # Gather all images by class across owner-* folders
+    # Scan owner-* folders and collect all images by their class folder.
+    # This loop will exclude classes if they are explicitly removed via taxa-config filtering.
     class_to_paths = {}
     for owner in os.listdir(source_root):
         owner_path = os.path.join(source_root, owner)
@@ -134,16 +116,18 @@ def build_combined_and_val(input_config: str, exclude_classes: bool, include_con
             if imgs:
                 class_to_paths.setdefault(img_class, []).extend(imgs)
 
-    # Copy to combined, then move split to val
+    # Copy to combined, then move split to val.
     for img_class, paths in sorted(class_to_paths.items()):
         total = len(paths)
 
+        # Remove images if the class exceeds the threshold count.
         if (threshold != None) and (total > threshold):
             for delta in range(total - threshold):
                 random_element = random.choice(paths)
                 paths.remove(random_element)
             total = len(paths)
 
+        # Skip classes if they don't exceed the threshold limit or the minimum total per class.
         if total < min_total_per_class:
             if (console_print):
                 print(f"[SKIP] Class '{img_class}' has only {total} images (need ≥ {min_total_per_class})")
@@ -167,6 +151,8 @@ def build_combined_and_val(input_config: str, exclude_classes: bool, include_con
             copied_files.append(dst)
         
         move_k = int(len(copied_files) * split_frac)
+
+        # Copy validation images as-is.
         if move_k > 0:
             random.shuffle(copied_files)
             to_move = copied_files[:move_k]
@@ -242,6 +228,7 @@ def build_resnet_embedder(embedder, model):
 
     return embedder
 
+# Returns model, embedder, and optimizer for vgg model
 def build_vgg16_model(use_pretrain: bool, num_of_target_classes: int):
     model = models.vgg16(pretrained=use_pretrain)
     if use_pretrain:
@@ -257,7 +244,7 @@ def build_vgg16_model(use_pretrain: bool, num_of_target_classes: int):
 
     return model, embedder, optimizer
 
-# Builds embedder for VGG16
+# Builds an embedder model for vgg structure
 def build_vgg16_embedder(embedder, model):
     embedder.classifier[-1] = nn.Identity()
     state = model.state_dict()
@@ -270,7 +257,7 @@ def build_vgg16_embedder(embedder, model):
 
     return embedder
 
-
+# Returns model, embedder, and optimizer for densenet121 model
 def build_densenet121_model(use_pretrain: bool, num_of_target_classes: int):
     model = models.densenet121(pretrained=use_pretrain)
     if use_pretrain:
@@ -284,7 +271,7 @@ def build_densenet121_model(use_pretrain: bool, num_of_target_classes: int):
 
     return model, embedder, optimizer
 
-# Builds embedder for densenet121
+# Builds an embedder model for densenet structure
 def build_densenet121_embedder(embedder, model):
     embedder.classifier = nn.Identity()
     state = model.state_dict()
