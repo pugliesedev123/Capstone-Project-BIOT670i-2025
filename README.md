@@ -53,7 +53,7 @@ data/train/
 Each `owner-*` folder contains multiple taxon or mineral folders.  
 Each taxon folder contains `.jpg`, `.jpeg`, or `.png` images.
 
-Requests for sample formatted data can be made out to either `pugliesdev123@gmail.com` or `digsitedetective@gmail.com`.
+Requests for sample formatted data can be made out to either [pugliesdev123@gmail.com](mailto:pugliesdev123@gmail.com) or [digsitedetective@gmail.com](mailto:digsitedetective@gmail.com).
 
 ## Utilities
 
