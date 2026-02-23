@@ -1,4 +1,4 @@
-# importing subprocess module 
+# importing subprocess module
 import subprocess
 import shlex
 import datetime
@@ -13,7 +13,7 @@ import platform
 def generate_arguments(argument_dict: dict):
     commands = []
 
-    # Generate a list of commands for shlex strings. 
+    # Generate a list of commands for shlex strings.
     for argument, value in argument_dict.items():
         flag = f"--{argument}"
         if isinstance(value, bool):
@@ -26,8 +26,22 @@ def generate_arguments(argument_dict: dict):
                 commands += [f"{flag} {v}"]
         else:
             commands += [f"{flag} {value}"]
-        
+
     return commands
+
+# Convert the "shlex strings" from generate_arguments into a real argv list.
+# This avoids Windows path weirdness (backslashes/spaces) and prevents output-dir from getting mangled.
+def build_argv(commands: list[str]) -> list[str]:
+    argv = []
+    for c in commands:
+        # If it's a combined "flag value" string, split once.
+        # Example: "--output-dir output\\run_..." -> ["--output-dir", "output\\run_..."]
+        if " " in c:
+            flag, value = c.split(" ", 1)
+            argv.extend([flag, value])
+        else:
+            argv.append(c)
+    return argv
 
 # Calculate disk size.
 def get_size(num_bytes, suffix="B"):
@@ -43,33 +57,50 @@ def main():
     # Define your arguments for the run below, they will be exported to a summary file.
     # !!!!Ensure you carefully tune your variables, as runtime is long and failure might not occur until well into the run!!!!
 
+    # Ensure the base output/ directory exists.
+    base_output_dir = "output"
+    os.makedirs(base_output_dir, exist_ok=True)
+
+    # Create a unique output dir for THIS run, and thread it through all scripts.
+    # Example: output/run_2026-01-23_22-14-03
+    run_name = "[INSERT_RUN_NAME_HERE]"
+    run_ts = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    run_output_dir = os.path.join(base_output_dir, f"run_{run_name}_{run_ts}")
+    os.makedirs(run_output_dir, exist_ok=True)
+
     # see defaults on ./scripts/augment_images.py
     augment_argument_dict = {
         "input-root": "./data/train",                         # declare your target input training folder
         "input-config": "./taxa-config.txt",                  # declare your target taxa-config file (use with include-config-classes-only)
         "val-root": "./data/val/owner-combined",              # declare your target validation root folder
         "aug-root": "./data/augmented/owner-combined",        # declare your target augmentation root folder
-        "aug-per-image": 3,                                   # declare a non-zero integer
+        "aug-per-image": 7,                                   # declare a non-zero integer
+        "val-frac": 0.3,                                      # declare a non-zero float
         "seed": 42,                                           # declare a non-zero integer
         "console-print": True,                                # mark true or false
         "exclude-classes": False,                             # mark true or false
-        "include-config-classes-only": False,                 # mark true or false
-        "threshold": None,                                    # declare a non-zero integer
-        "disable-tf": [],                                     # include transforms you'd like to exclude ['rotate', 'scale', 'zoom', 'horizontalflip', 'verticalflip', 'grayscale', 'equalize', 'sharpen']
+        "include-config-classes-only": True,                  # mark true or false
+        "threshold": 50,                                      # declare a non-zero integer
+        "disable-tf": ["equalize"],                           # include transforms you'd like to exclude ['rotate', 'scale', 'zoom', 'horizontalflip', 'verticalflip', 'grayscale', 'equalize', 'sharpen']
         "disable-ca": []                                      # include classes you'd like to exclude ['exogyra_sp', 'pycnodonte_sp', 'isurus_sp', ...]
     }
 
     # see defaults on ./scripts/train_model.py
     train_argument_dict = {
         "use-augmented": True,                    # mark true or false
-        "console-print": True,                   # mark true or false
+        "console-print": True,                    # mark true or false
         "use-pre-train": True,                    # mark true or false
         "seed": 42,                               # declare a non-zero integer
-        "batch-size": 16,                         # declare a non-zero integer
-        "epochs": 5,                              # declare a non-zero integer
+        "batch-size": 8,                          # declare a non-zero integer
+        "epochs": 15,                             # declare a non-zero integer
+        "disable-early-stopping": True,           # mark true or false (OFF SWITCH)
+        "patience": 3,                            # stop after N epochs with no appreciable improvement
+        "min-delta": 0.001,                       # minimum change required to count as an improvement
+        "monitor": "val_loss",                    # choose one: val_loss, val_acc
+        "output-dir": run_output_dir,             # folder where logs will be saved (PER-RUN)
         "input-config": "taxa-config.txt",        # declare your target taxa-config file
         "model-path": None,                       # declare your target model weights path or leave None
-        "model": "resnet18",                      # choose one: resnet18, resnet34, resnet50, vgg16, densenet121
+        "model": "densenet121",                   # choose one: resnet18, resnet34, resnet50, vgg16, densenet121
         "threshold": None,                        # declare a non-zero integer or leave None
         "exclude-classes": False,                 # mark true or false
         "include-config-classes-only": False      # mark true or false
@@ -89,42 +120,56 @@ def main():
     # Start run timer for run duration.
     start_time = datetime.datetime.now()
 
-    subprocess.run(["python", "./utils/taxa_for_config.py"]) # comment out this line if you are using a customized taxa list for the run
+    # subprocess.run(["python", "./utils/taxa_for_config.py"]) # comment out this line if you are using a customized taxa list for the run
 
     # Run Augmentation Script
-
     augment_images_commands = generate_arguments(augment_argument_dict)
-    augment_argument_summary = f"The following arguments were used to run './scripts/augment_images.py' on {datetime.datetime.now()}:\n{augment_images_commands}"
-    flat_aug_args = shlex.split(" ".join(augment_images_commands))
+    augment_argument_summary = (
+        f"The following arguments were used to run './scripts/augment_images.py' on {datetime.datetime.now()}:\n"
+        f"{augment_images_commands}"
+    )
 
+    flat_aug_args = build_argv(augment_images_commands)
     subprocess.run(["python", "./scripts/augment_images.py", *flat_aug_args], check=True)
 
     # Run Training Script
-
     training_commands = generate_arguments(train_argument_dict)
-    training_summary = f"The following arguments were used to run './scripts/train_model.py' on {datetime.datetime.now()}:\n{training_commands}"
-    flat_train_args = shlex.split(" ".join(training_commands))
+    training_summary = (
+        f"The following arguments were used to run './scripts/train_model.py' on {datetime.datetime.now()}:\n"
+        f"{training_commands}"
+    )
 
+    flat_train_args = build_argv(training_commands)
     subprocess.run(["python", "./scripts/train_model.py", *flat_train_args], check=True)
 
     # Run Prediction Script
-
     prediction_commands = generate_arguments(predict_argument_dict)
-    prediction_summary = f"The following arguments were used to run './scripts/predict_image.py' on {datetime.datetime.now()}:\n{prediction_commands}"
-    flat_predic_args = shlex.split(" ".join(prediction_commands))
+    prediction_summary = (
+        f"The following arguments were used to run './scripts/predict_image.py' on {datetime.datetime.now()}:\n"
+        f"{prediction_commands}"
+    )
 
+    flat_predic_args = build_argv(prediction_commands)
     subprocess.run(["python", "./scripts/predict_image.py", *flat_predic_args], check=True)
 
     # End timer and calculated run duration.
     end_time = datetime.datetime.now()
     duration = end_time - start_time
 
-    list_of_files = glob.glob(f"./{predict_argument_dict.get('output-dir', 'output')}/*.csv")
+    # Find latest prediction CSV inside THIS run's output directory.
+    # (recursive=True makes this resilient if you later nest outputs)
+    list_of_files = glob.glob(os.path.join(run_output_dir, "**", "*.csv"), recursive=True)
+    if not list_of_files:
+        raise RuntimeError(f"[ERROR] No CSV outputs were found in: {run_output_dir}")
     latest_file = max(list_of_files, key=os.path.getctime)
 
     # Write run summary information including arguments, output file(s), and time elapsed.
-    summary_file = open(latest_file.replace("predictions", "summary").replace(".csv", ".txt"), "w")
-    summary_file.write(f"=" * 40 + " Prediction Summary: " + "=" * 40 + f"\nOutput File: {latest_file}\n\n{augment_argument_summary}\n\n{training_summary}\n\n{prediction_summary}")
+    summary_path = latest_file.replace("predictions", "summary").replace(".csv", ".txt")
+    summary_file = open(summary_path, "w", encoding="utf-8")
+    summary_file.write(
+        f"=" * 40 + " Prediction Summary: " + "=" * 40 +
+        f"\nOutput File: {latest_file}\n\n{augment_argument_summary}\n\n{training_summary}\n\n{prediction_summary}"
+    )
     summary_file.write(f"\n\nTotal time elapsed: {duration}\n\n")
 
     # Write System Information,
@@ -200,12 +245,12 @@ def main():
     for root, dirname, filenames in os.walk(f"./{augment_argument_dict.get('aug-root')}"):
         aug_files += len(filenames)
         folders += len(dirname)
-        if (root != '././data/augmented/owner-combined'):
-            taxa_list[root.replace('././data/augmented/owner-combined\\taxon-', '')] = [len(filenames)]
+        if root != "././data/augmented/owner-combined":
+            taxa_list[root.replace("././data/augmented/owner-combined\\taxon-", "")] = [len(filenames)]
     for root, dirname, filenames in os.walk(f"./{augment_argument_dict.get('val-root')}"):
         val_files += len(filenames)
-        if (root != '././data/val/owner-combined'):
-            taxa_list[root.replace('././data/val/owner-combined\\taxon-', '')].insert(1, len(filenames))
+        if root != "././data/val/owner-combined":
+            taxa_list[root.replace("././data/val/owner-combined\\taxon-", "")].insert(1, len(filenames))
 
     # Write taxa counts and number.
     summary_file.write(f"Total number of classes: {folders}\nTotal number of training files: {aug_files}\nTotal number of validation files: {val_files}")
@@ -214,6 +259,8 @@ def main():
         summary_file.write(f"{key}\t{value[0]}\t{value[1]}\n")
 
     summary_file.close()
+    print(f"[INFO] Run outputs saved to: {run_output_dir}")
+    print(f"[INFO] Run summary saved to: {summary_path}")
 
 if __name__ == "__main__":
     main()

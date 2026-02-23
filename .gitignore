@@ -11,6 +11,7 @@ prediction_results/
 utils/old-runs
 test/
 tests/
+test-results/
 
 # Python noise
 __pycache__/

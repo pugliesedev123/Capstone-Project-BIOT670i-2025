@@ -36,8 +36,7 @@ def pad_to_square(img: Image.Image, fill=None):
     padding = (pad_w, pad_h, s - w - pad_w, s - h - pad_h)
     return F.pad(img, padding, fill=fill, padding_mode="constant")
 
-
-def geom_transform(img: Image.Image, degrees=5, scale=(0.8, 1.2), out_size=256, expand=True, disabled_args=[]):
+def geom_transform(img: Image.Image, degrees=15, scale=(0.7, 1.3), out_size=256, expand=True, disabled_args=[]):
     # Rotate slightly,
     # Scale slightly (zoom in or out),
     # Pad to make square,
@@ -58,6 +57,14 @@ def geom_transform(img: Image.Image, degrees=5, scale=(0.8, 1.2), out_size=256, 
     return F.resize(x, [out_size, out_size])
 
 
+def fit_only(img: Image.Image, out_size=256):
+    # Pad first image to square using edge color,
+    # then resize.
+    fill = edge_fill(img)
+    x = pad_to_square(img, fill=fill)
+    return F.resize(x, [out_size, out_size])
+
+
 def is_taxon_dir(name: str) -> bool:
     # A class folder is either taxon-'' or mineral-''.
     n = name.lower()
@@ -72,7 +79,7 @@ def norm_class_key(name: str) -> str:
 def main():
 
     # Command-Line Arguments
-    parser = argparse.ArgumentParser(description="Combine owners into a single dataset, send 1/5 to val, and save augmented images for the rest")
+    parser = argparse.ArgumentParser(description="Combine owners into a single dataset, send some to val, and save augmented images for the rest")
     parser.add_argument("--input-root", default="data/train", help="Root with owner-* subdirectories")
     parser.add_argument("--input-config", default="taxa-config.txt", help="Taxa file to guide for your augmentation")
     parser.add_argument("--val-root", default="data/val/owner-combined", help="Where to copy validation images")
@@ -82,8 +89,9 @@ def main():
     parser.add_argument("--console-print", action='store_true', help="Print extra details to console")
     parser.add_argument("--exclude-classes", action='store_true', help="Remove select classes marked with an '-' from taxa-config.txt")
     parser.add_argument("--include-config-classes-only", action='store_true', help="Include only classes in taxa-config.txt and start with a '+'")
+    parser.add_argument("--val-frac", type=float, default=0.3, help="Fraction of images to send to validation (ex: 0.3 = 30%)")
     parser.add_argument("--threshold", type=int, help="Generate class balance by defining a threshold that will remove classes if they do not an image count that exceeds this number. Randomly excise images from classes that exceed this number until they are equal to the threshold.")
-    parser.add_argument("--disable-tf", action='append', type=str.lower, default=[], help="Disable specific transformations for augmentation. The following transforms can be disabled by repeatedly calling the argument: rotate, scale, zoom, horizontalflip, verticalflip, grayscale, equalize, sharpen")
+    parser.add_argument("--disable-tf", action='append', type=str.lower, default=[], help="Disable specific transformations for augmentation. The following transforms can be disabled by repeatedly calling the argument: rotate, scale, zoom, horizontalflip, verticalflip, grayscale, equalize, sharpen") # Scale is currently lacking function
     parser.add_argument("--disable-ca", action='append', type=str.lower, default=[], help="Disable specific class for augmentation (eg. --disable-ca exogyra_sp)")
     args = parser.parse_args()
 
@@ -97,16 +105,18 @@ def main():
             print(f"[INFO] Disabling the following argument {argument}")
 
     # Define the image augmentation pipeline.
+    # Base (non-augmented) version: just fit to 256.
+    base_transform = transforms.Compose([transforms.Lambda(lambda img: fit_only(img, out_size=256)),])
+
     # We do a small geometric transform, then a few light appearance tweaks, then to tensor.
     on = lambda n: n not in args.disable_tf
-    augment = transforms.Compose([operation for operation in [
-        transforms.Lambda(lambda img: geom_transform(img, degrees=5, scale=(0.8, 1.2), out_size=256, disabled_args=args.disable_tf)),
+    augment_transform = transforms.Compose([operation for operation in [
+        transforms.Lambda(lambda img: geom_transform(img, degrees=15, scale=(0.7, 1.3), out_size=256, disabled_args=args.disable_tf)),
         on("sharpen") and transforms.RandomAdjustSharpness(1.5, p=0.25),
         on("grayscale") and transforms.RandomGrayscale(p=0.2),
         on("equalize") and transforms.RandomEqualize(p=0.25),
         on("horizontalflip") and transforms.RandomHorizontalFlip(p=0.5),
         on("verticalflip") and transforms.RandomVerticalFlip(p=0.5),
-        transforms.ToTensor(),
     ] if operation])
 
 
@@ -167,7 +177,6 @@ def main():
             elif(args.include_config_classes_only and entry.replace("taxon-","") not in taxon_inclusion_list):
                 continue
 
-            
             taxon_key = norm_class_key(entry)           # Collect taxon identity,
             taxon_to_images.setdefault(taxon_key, [])   
 
@@ -188,10 +197,11 @@ def main():
         
         random.shuffle(combined_images)
         n_total = len(combined_images)
-        n_val = n_total // 5
+        n_val = int(round(n_total * args.val_frac))
+        n_val = max(1, min(n_val, n_total - 1))
         
         # Skip classes if they don't exceed the threshold limit.
-        if (args.threshold != None) and (len(combined_images) < args.threshold or (n_total - n_val) < args.threshold):
+        if (args.threshold != None) and (len(combined_images) < args.threshold or (n_total - n_val) < 20):
             threshold_skipped.append((taxon_key, len(combined_images)))
             continue
         
@@ -201,7 +211,8 @@ def main():
                 random_element = random.choice(combined_images)
                 combined_images.remove(random_element)
             n_total = len(combined_images)
-            n_val = n_total // 5
+            n_val = int(round(n_total * args.val_frac))
+            n_val = max(1, min(n_val, n_total - 1))
 
         val_images = combined_images[:n_val]
         train_images = combined_images[n_val:]
@@ -251,14 +262,25 @@ def main():
                 continue        
 
             base, _ = os.path.splitext(os.path.basename(img_path))
+            # First, save a resized/padded copy of the original image (no rotation/zoom/flip),
+            # so every training image has a "baseline" 256x256 version in the aug folder.
+            try:
+                out0 = base_transform(img)
+                out0_name = f"{owner}-{base}_orig.png"
+                out0.save(os.path.join(aug_taxon_dir, out0_name))
+            except Exception as e:
+                print(f"Failed to save base version for {img_path}: {e}")
+                continue
+
+            # For each training image, write several augmented versions.
             for i in range(args.aug_per_image):
                 try:
-                    tensor = augment(img)                               # Apply random transforms,
-                    out = transforms.ToPILImage()(tensor)               # Convert back to PIL for saving,
-                    out_name = f"{owner}-{base}_aug_{i}.png"            # and create file name including augmentation number.
+                    out = augment_transform(img)                    # Apply random transforms,
+                    out_name = f"{owner}-{base}_aug_{i}.png"        # and create file name including augmentation number.
                     out.save(os.path.join(aug_taxon_dir, out_name))
                 except Exception as e:
                     print(f"Failed to augment {img_path}: {e}")
+
 
     if args.console_print:
         if skipped:
@@ -266,7 +288,7 @@ def main():
             for name, count in skipped:
                 print(f"  - {name}: {count} images")
         elif(args.threshold != None):
-            print(f"\n[INFO] Skipped classes that missed manually definied threshold of {args.threshold}:")
+            print(f"\n[INFO] Skipped classes that missed manually defined threshold of {args.threshold}:")
             for name, count in threshold_skipped:
                 print(f"  - {name}: {count} images")
         else:

@@ -1,6 +1,8 @@
 import json
 from tqdm import tqdm
 import time
+from datetime import datetime
+import csv
 import torch
 from torchvision import datasets, transforms, models
 from torch import nn, optim
@@ -284,6 +286,30 @@ def build_densenet121_embedder(embedder, model):
 
     return embedder
 
+
+def evaluate(model, loader, criterion, device):
+    # Run a validation pass and report average loss and accuracy.
+    model.eval()
+    running_loss = 0.0
+    correct = 0
+    total = 0
+
+    with torch.no_grad():
+        for images, labels in loader:
+            images, labels = images.to(device), labels.to(device)
+            out = model(images)
+            loss = criterion(out, labels)
+
+            running_loss += loss.item() * labels.size(0)
+            preds = out.argmax(dim=1)
+            correct += (preds == labels).sum().item()
+            total += labels.size(0)
+
+    avg_loss = running_loss / total if total > 0 else 0.0
+    acc = (100.0 * correct / total) if total > 0 else 0.0
+    return avg_loss, acc
+
+
 def main():
     # Command-Line Arguments
     parser = argparse.ArgumentParser(description='Train fossil image classifier')
@@ -295,19 +321,29 @@ def main():
     parser.add_argument('--epochs', type=int, default=5, help='Number of training epochs')
     parser.add_argument("--input-config", default="taxa-config.txt", help="Taxa file to guide for your augmentation")
     parser.add_argument('--model-path', type=str, default=None, help='Path to save model weights')
+    parser.add_argument("--ratio", default=4, help="Set validation:training split. The default ratio is 1:4.")
     parser.add_argument("--model", type=str, default='resnet18', choices=["resnet18", "resnet34", "resnet50", "vgg16", "densenet121"], help="Determines which model to train")
     parser.add_argument("--threshold", type=int, help="Generate class balance by defining a threshold that will remove classes if they do not an image count that exceeds this number. Randomly excise images from classes that exceed this number until they are equal to the threshold.")
     parser.add_argument("--exclude-classes", action='store_true', help="Remove select classes marked with an '-' from taxa-config")
     parser.add_argument("--include-config-classes-only", action='store_true', help="Include only classes in taxa-config and start with a '+'")
+
+    # Early stopping options.
+    parser.add_argument("--patience", type=int, default=3, help="Stop after N epochs without appreciable improvement.")
+    parser.add_argument("--min-delta", type=float, default=0.001, help="Minimum change required to count as an improvement.")
+    parser.add_argument("--monitor", type=str, default="val_loss", choices=["val_loss", "val_acc"], help="Metric to monitor for early stopping.")
+
+    # Off switch (early stopping is ON unless you pass this flag).
+    parser.add_argument("--disable-early-stopping", action="store_true", help="Disable early stopping and always run full epochs.")
+
+    # Where to write epoch_log, run_summary, and backup-model.
+    parser.add_argument("--output-dir", default="output", help="Folder where logs will be saved.")
     args = parser.parse_args()
 
     # Location where model state will be stored
     if args.model_path:
         path_to_model = args.model_path
-        #print(f"Model path supplied, model will be stored at:\n{path_to_model}")
     else:
         path_to_model = f"models/fossil_{args.model}.pt"
-        #print(f"No model specified, will be stored at:\n{path_to_model}")
 
     # Apply seed as early as possible so all randomness is controlled
     set_seed(args.seed)
@@ -354,8 +390,7 @@ def main():
         class_path = os.path.join(val_dir, class_folder)
         if not os.path.isdir(class_path):
             continue
-        images = [f for f in os.listdir(
-            class_path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+        images = [f for f in os.listdir(class_path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
         if not images:
             raise RuntimeError(f"[ERROR] Validation folder {class_path} is empty!")
 
@@ -442,8 +477,24 @@ def main():
         criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
    
     # Train only the final layer for now to keep things simple and fast
-
     print("[INFO] Starting training loop...")
+
+    # Build output file names and write headers.
+    os.makedirs(args.output_dir, exist_ok=True)
+    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    tag = f"{args.model}_{ts}"
+
+    epoch_log_path = os.path.join(args.output_dir, f"epoch_log_{tag}.csv")
+    summary_path = os.path.join(args.output_dir, f"run_summary_{tag}.txt")
+
+    with open(epoch_log_path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["epoch", "train_loss", "train_acc", "val_loss", "val_acc", "epoch_seconds"])
+
+    # Early stopping state.
+    best_metric = None
+    best_epoch = -1
+    no_improve = 0
 
     for epoch in range(args.epochs):
         model.train()
@@ -468,26 +519,108 @@ def main():
             optimizer.step()
 
             # Track metrics for display
-            running_loss += loss.item()
+            running_loss += loss.item() * labels.size(0)
             preds = out.argmax(dim=1)
             correct += (preds == labels).sum().item()
             total += labels.size(0)
 
-            avg_loss = running_loss / (batch_idx + 1)
-            train_acc = 100 * correct / total
+            avg_loss = (running_loss / total) if total > 0 else 0.0
+            train_acc = (100.0 * correct / total) if total > 0 else 0.0
 
             # Show current loss and accuracy on the progress bar
             progress_bar.set_postfix({'Loss': f"{avg_loss:.4f}", 'Acc': f"{train_acc:.2f}%"})
 
-        epoch_time = time.time() - start_time
+        # End of epoch timing
+        epoch_seconds = time.time() - start_time
+
+        # Run validation after each epoch so we can do early stopping.
+        val_loss, val_acc = evaluate(model, val_loader, criterion, device)
+
         print(f"[INFO] Epoch {epoch + 1} Complete | "
-              f"Loss: {running_loss:.4f} | "
+              f"Loss: {avg_loss:.4f} | "
               f"Train Acc: {train_acc:.2f}% | "
-              f"Time: {int(epoch_time // 60)}m {int(epoch_time % 60)}s")
+              f"Val Loss: {val_loss:.4f} | "
+              f"Val Acc: {val_acc:.2f}% | "
+              f"Time: {int(epoch_seconds // 60)}m {int(epoch_seconds % 60)}s")
+
+        # Write epoch results to disk.
+        with open(epoch_log_path, "a", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerow([epoch + 1, f"{avg_loss:.6f}", f"{train_acc:.4f}", f"{val_loss:.6f}", f"{val_acc:.4f}", f"{epoch_seconds:.2f}"])
+
+        # Skip early stopping logic entirely if disabled.
+        if not args.disable_early_stopping:
+
+            # Pick which metric we monitor.
+            if args.monitor == "val_loss":
+                current = val_loss
+                # Improvement means loss decreased by at least min_delta.
+                improved = (best_metric is None) or (best_metric - current > args.min_delta)
+            else:
+                current = val_acc
+                # Improvement means accuracy increased by at least min_delta.
+                improved = (best_metric is None) or (current - best_metric > args.min_delta)
+
+            # Update early stopping state.
+            if improved:
+                best_metric = current
+                best_epoch = epoch + 1
+                no_improve = 0
+                if args.console_print:
+                    print(f"[INFO] New best {args.monitor}: {best_metric:.6f} at epoch {best_epoch}")
+            else:
+                no_improve += 1
+                if args.console_print:
+                    print(f"[INFO] No improvement ({no_improve}/{args.patience}). Best {args.monitor}: {best_metric:.6f} at epoch {best_epoch}")
+
+            # Stop early if we've gone too long without improvement.
+            if no_improve >= args.patience:
+                print(f"[INFO] Early stopping triggered. Best {args.monitor}: {best_metric:.6f} at epoch {best_epoch}")
+                break
+
+        else:
+            # If early stopping is disabled, still keep best_epoch/best_metric populated for run_summary.
+            # We record the first epoch as the "best" by default so the summary isn't empty.
+            if best_metric is None:
+                if args.monitor == "val_loss":
+                    best_metric = val_loss
+                else:
+                    best_metric = val_acc
+                best_epoch = epoch + 1
 
     # Save trained weights so you can load them later for prediction
     torch.save(model.state_dict(), path_to_model)
     print(f"[INFO] Model saved to {path_to_model}")
+
+    # Save a second copy into the output directory.
+    os.makedirs(args.output_dir, exist_ok=True)
+    output_model_path = os.path.join(args.output_dir, f"model_{tag}.pt")
+    torch.save(model.state_dict(), output_model_path)
+    print(f"[INFO] Model copy saved to {output_model_path}")
+
+    # Write a short run summary.
+    with open(summary_path, "w", encoding="utf-8") as f:
+        f.write(f"model: {args.model}\n")
+        f.write(f"epochs_requested: {args.epochs}\n")
+        f.write(f"monitor: {args.monitor}\n")
+        f.write(f"patience: {args.patience}\n")
+        f.write(f"min_delta: {args.min_delta}\n")
+        f.write(f"best_epoch: {best_epoch}\n")
+        f.write(f"best_metric: {best_metric}\n")
+        f.write(f"batch_size: {args.batch_size}\n")
+        f.write(f"seed: {args.seed}\n")
+        f.write(f"use_augmented: {args.use_augmented}\n")
+        f.write(f"use_pre_train: {args.use_pre_train}\n")
+        f.write(f"threshold: {args.threshold}\n")
+        f.write(f"train_dir: {train_dir}\n")
+        f.write(f"val_dir: {val_dir}\n")
+        f.write(f"class_count: {len(train_data.classes)}\n")
+        f.write(f"model_saved_path: {path_to_model}\n")
+        f.write(f"epoch_log_path: {epoch_log_path}\n")
+        f.write(f"early_stopping_disabled: {args.disable_early_stopping}\n")
+
+    print(f"[INFO] Run summary saved to {summary_path}")
+
 
 if __name__ == "__main__":
     main()

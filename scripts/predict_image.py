@@ -18,6 +18,17 @@ def is_image(filename):
     return filename.lower().endswith(extensions)
 
 
+# Normalize a class name so comparisons are consistent.
+# Example: "taxon-otodus_megalodon" -> "otodus_megalodon"
+def norm_class_name(name: str) -> str:
+    n = (name or "").strip().lower()
+    if n.startswith("taxon-"):
+        n = n.replace("taxon-", "", 1)
+    if n.startswith("mineral-"):
+        n = n.replace("mineral-", "", 1)
+    return n
+
+
 def load_embedder_from_classifier(model_path_str, classifier_state, device):
     # Pick architecture and set identity at the correct location.
     if "vgg16" in model_path_str:
@@ -94,10 +105,6 @@ def main():
         model = models.densenet121(weights=None)
         model.classifier = nn.Linear(model.classifier.in_features, len(class_names))
 
-    ckpt = torch.load(args.model_path, map_location=device)
-    state = ckpt.get("state_dict", ckpt)
-    state = {k.replace("module.", ""): v for k, v in state.items()}
-
     # Load checkpoint once
     ckpt = torch.load(args.model_path, map_location=device)
     state = ckpt.get("state_dict", ckpt)
@@ -141,7 +148,10 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     base_name = os.path.basename(os.path.abspath(args.example_dir)) or "examples"
-    csv_path = os.path.join(args.output_dir, f"predictions_{args.model_path.replace("models/fossil_","").replace(".pt","")}_{base_name}_{ts}.csv")
+
+    model_tag = args.model_path.replace("models/fossil_", "").replace(".pt", "")
+    csv_path = os.path.join(args.output_dir, f"predictions_{model_tag}_{base_name}_{ts}.csv")
+    metrics_csv_path = os.path.join(args.output_dir, f"metrics_{model_tag}_{base_name}_{ts}.csv")
 
     header = [
         "filename",
@@ -157,6 +167,14 @@ def main():
         ]
 
     rows = []
+
+    # Store true/pred class indices so we can compute TP/FP/TN/FN later.
+    # This is based on top-1 predictions only.
+    y_true = []
+    y_pred = []
+
+    # Map normalized class name -> index.
+    class_to_index = {norm_class_name(name): i for i, name in enumerate(class_names)}
 
     # Check input folder location.
     if not os.path.isdir(args.example_dir):
@@ -189,9 +207,26 @@ def main():
                 probs = F.softmax(logits, dim=1)    # convert scores into probabilities.
 
                 # Pick the top K classes
-                top_probs, top_indices = torch.topk(probs, args.top_predictions)
+                num_classes = probs.shape[1]
+                k = min(args.top_predictions, num_classes)
+
+                if args.top_predictions > num_classes and args.console_print:
+                    print(f"[WARN] Requested top-predictions={args.top_predictions} but model has only {num_classes} classes. Using k={k}.")
+
+                top_probs, top_indices = torch.topk(probs, k)
                 top_probs = top_probs[0].cpu().numpy()
                 top_indices = top_indices[0].cpu().numpy()
+
+
+                # Save top-1 prediction for metrics.
+                # True label comes from folder name.
+                true_class = norm_class_name(parent_folder)
+                pred_class = norm_class_name(class_names[top_indices[0]])
+
+                # Only score images if the folder name matches a known class.
+                if true_class in class_to_index and pred_class in class_to_index:
+                    y_true.append(class_to_index[true_class])
+                    y_pred.append(class_to_index[pred_class])
 
                 if(args.console_print):
                     rel_path_for_print = os.path.relpath(img_path, args.example_dir)
@@ -201,11 +236,12 @@ def main():
                 row = [file, parent_folder]
 
                 # Add the top K class predictions to the row and print them,
-                for i in range(args.top_predictions):
+                for i in range(len(top_indices)):
                     
                     predicted_class = class_names[top_indices[i]]   # map the index to a class name,
-                    confidence_pct = float(top_probs[i] * 100.0)    # return the confidence score in that predication as a percent.
+                    confidence_pct = float(top_probs[i] * 100.0)    # return the confidence score as a percent.
                     class_accurate = ""
+
 
                     # Check class prediction according to folder name, should turn this into an argument.
                     if predicted_class.replace("taxon-","") == (parent_folder.replace("taxon-","") or parent_folder):
@@ -225,7 +261,77 @@ def main():
         writer.writerow(header)
         writer.writerows(rows)
 
+    # Generate key metrics per class using TP / FP / TN / FN.
+    # Metrics are based on top-1 predictions only.
+    metrics_header = [
+        "class_name",
+        "support",
+        "TP",
+        "FP",
+        "TN",
+        "FN",
+        "ACC",
+        "PRC",
+        "TPR",
+        "FPR",
+    ]
+
+    metrics_rows = []
+
+    N = len(y_true)
+    n_classes = len(class_names)
+
+    # If no images could be scored, still create the file with header.
+    if N > 0:
+        for c in range(n_classes):
+
+            # Count TP/FP/FN for this class.
+            TP = sum(1 for t, p in zip(y_true, y_pred) if t == c and p == c)
+            FP = sum(1 for t, p in zip(y_true, y_pred) if t != c and p == c)
+            FN = sum(1 for t, p in zip(y_true, y_pred) if t == c and p != c)
+
+            # Everything else is TN.
+            TN = N - TP - FP - FN
+
+            # Support = number of true examples for this class.
+            support = sum(1 for t in y_true if t == c)
+
+            # ACC = (TP + TN) / (TP + FP + TN + FN)
+            denom_acc = (TP + FP + TN + FN)
+            ACC = (TP + TN) / denom_acc if denom_acc > 0 else 0.0
+
+            # PRC = TP / (TP + FP)
+            denom_prc = (TP + FP)
+            PRC = TP / denom_prc if denom_prc > 0 else 0.0
+
+            # TPR = TP / (TP + FN)
+            denom_tpr = (TP + FN)
+            TPR = TP / denom_tpr if denom_tpr > 0 else 0.0
+
+            # FPR = FP / (FP + TN)
+            denom_fpr = (FP + TN)
+            FPR = FP / denom_fpr if denom_fpr > 0 else 0.0
+
+            metrics_rows.append([
+                class_names[c],
+                support,
+                TP,
+                FP,
+                TN,
+                FN,
+                f"{ACC:.6f}",
+                f"{PRC:.6f}",
+                f"{TPR:.6f}",
+                f"{FPR:.6f}",
+            ])
+
+    with open(metrics_csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(metrics_header)
+        writer.writerows(metrics_rows)
+
     print(f"\nSaved predictions to: {csv_path}")
+    print(f"\nSaved metrics to: {metrics_csv_path}")
 
 
 if __name__ == "__main__":
