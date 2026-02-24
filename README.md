@@ -41,7 +41,7 @@ All other imports are from the Python standard library (for example: `os`, `shut
 
 ## Dataset layout
 
-Place images in **owner** folders, with subfolders that represent classes (taxa or minerals):
+Place images in **owner** folders, with subfolders that represent classes (taxa):
 
 ```
 data/train/
@@ -52,10 +52,9 @@ data/train/
     taxon-exogyra_sp/
   owner-author/
     taxon-isurus_sp/
-    mineral-pyrite_nodule/
 ```
 
-- Each `owner-*` folder contains one or more `taxon-*` or `mineral-*` subfolders.
+- Each `owner-*` folder contains one or more `taxon-*` subfolders.
 - Each class folder contains `.jpg`, `.jpeg`, `.png` images (and optionally `.heic` before conversion).
 
 Requests for sample formatted data can be made out to either [pugliesdev123@gmail.com](mailto:pugliesdev123@gmail.com) or [digsitedetective@gmail.com](mailto:digsitedetective@gmail.com).
