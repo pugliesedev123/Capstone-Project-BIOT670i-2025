@@ -9,7 +9,7 @@ It provides a Python toolkit for:
 
 The goal is a practical framework for researchers and fossil enthusiasts alike.
 
-Portions of this work were completed as part of the University of Maryland Global Campus M.S. Biotechnology capstone. More information on project goals can be found in `Project_Description.pdf`.
+Portions of this work were completed as part of the University of Maryland Global Campus M.S. Biotechnology capstone (BIOT670i-2025). More information on project goals can be found in `Project_Description.pdf`.
 
 Portions of these results were also used to create the poster "<em>Analyzing the Impact of Increased Species Diversity on Machine Learning-Based Image Classification within the Megatoothed Sharks</em>" for the joint Mid-Atlantic and NorthEast (MANE) Geobiology Symposium at the Edelman Fossil Park and Museum on Friday, 27 February 2026.
 
