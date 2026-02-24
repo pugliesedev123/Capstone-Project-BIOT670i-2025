@@ -16,7 +16,7 @@ Portions of these results were also used to create the poster "<em>Analyzing the
 A copy of the poster can be found at `Megatoothed_Sharks_MANE_Presentation.pdf`.
 Image credits and licensing details can be found at: `Megatoothed_Sharks_Deep_Learning_Credit_Citation.pdf`.
 
----
+
 
 ## Installation
 
@@ -37,7 +37,7 @@ pip install torch torchvision tqdm pillow numpy psutil
 
 All other imports are from the Python standard library (for example: `os`, `shutil`, `argparse`).
 
----
+
 
 ## Dataset layout
 
@@ -60,7 +60,7 @@ data/train/
 
 Requests for sample formatted data can be made out to either [pugliesdev123@gmail.com](mailto:pugliesdev123@gmail.com) or [digsitedetective@gmail.com](mailto:digsitedetective@gmail.com).
 
----
+
 
 ## Taxa config file (`taxa-config.txt`)
 
@@ -82,7 +82,7 @@ When flags are used:
 
 If neither flag is set, the config file can still be used as a reference list, but discovered classes are included based on the folder tree.
 
----
+
 
 ## Utilities
 
@@ -127,7 +127,7 @@ This traverses the training folder and writes a `taxa-config.txt` file that can 
 - Run experiments on a selected subset of classes
 - Enforce consistent class ordering
 
----
+
 
 ## Preprocess and augment images
 
@@ -199,7 +199,7 @@ Default behavior:
 - Classes with fewer than **20 images** may be skipped to avoid low-quality splits.
   - If this threshold is enforced in code, consider surfacing it as a named argument such as `--min-images` in a future update.
 
----
+
 
 ## Train the model
 
@@ -267,7 +267,7 @@ python train_model.py --use-augmented
 - `--include-config-classes-only` (flag)
   - Include only classes marked with `+` in `taxa-config.txt`.
 
----
+
 
 ## Outputs
 
@@ -299,7 +299,7 @@ The seed affects:
 - Random augmentations (rotations, flips, zoom, etc.)
 - Torch initialization and any other seeded randomness
 
----
+
 
 ## Predict on new images or folders
 
@@ -350,7 +350,7 @@ example_images/bivalve.png
   3. Exogyra costata (12.77%)
 ```
 
----
+
 
 ## Recommended workflow
 
@@ -360,7 +360,7 @@ example_images/bivalve.png
 4. Train model > `train_model.py`
 5. Predict on new images > `predict_image.py`
 
----
+
 
 ## Run all scripts with a single command
 
