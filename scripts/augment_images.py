@@ -66,9 +66,9 @@ def fit_only(img: Image.Image, out_size=256):
 
 
 def is_taxon_dir(name: str) -> bool:
-    # A class folder is either taxon-'' or mineral-''.
+    # A class folder is either taxon-''.
     n = name.lower()
-    return n.startswith("taxon-") or n.startswith("mineral-")
+    return n.startswith("taxon-")
 
 
 def norm_class_key(name: str) -> str:

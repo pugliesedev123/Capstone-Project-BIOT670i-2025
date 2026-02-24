@@ -24,8 +24,6 @@ def norm_class_name(name: str) -> str:
     n = (name or "").strip().lower()
     if n.startswith("taxon-"):
         n = n.replace("taxon-", "", 1)
-    if n.startswith("mineral-"):
-        n = n.replace("mineral-", "", 1)
     return n
 
 

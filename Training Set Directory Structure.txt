@@ -30,35 +30,15 @@ Example:
 
 3. Image Files (required for training)
 --------------------------------------
-Individual image files inside each taxon or mineral folder should be named with an index in parentheses:
+Individual image files inside each taxon should be named with an index in parentheses:
 
-    [taxon_or_mineral_name] (1).jpg
-    [taxon_or_mineral_name] (2).jpg
+    [taxon] (1).jpg
+    [taxon] (2).jpg
     ...
 
 This ensures consistency and compatibility with the classifier's input structure.
 
 If available, additional metadata such as tooth position or age may be tracked externally or in a separate documentation file.
-
-4. Mineral Layer (optional)
----------------------------
-To support classification of common associated minerals, folders may be labeled using:
-
-    mineral-[mineral_name]
-
-These folders contain mineral image files and are treated separately from biological taxonomy.
-
-Example:
-    owner-JSmith/
-        mineral-quartz/
-            quartz (1).jpg
-        mineral-pyrite/
-            pyrite (1).jpg
-
-Mineral files may also appear within biological taxon folders if associated directly with a specimen:
-
-    caracharhinus_leucas (1).jpg
-    pyrite (1).jpg
 
 Example Structure:
 ------------------
@@ -78,4 +58,3 @@ Summary Notes:
 - Avoid spaces and special characters in folder and file names.
 - Taxon names must be used consistently across all owner folders.
 - Image files must use the (1), (2), ... format.
-- Morphotype and mineral metadata may be tracked separately in documentation.
