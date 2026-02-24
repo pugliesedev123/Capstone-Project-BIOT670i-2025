@@ -157,7 +157,6 @@ def main():
     duration = end_time - start_time
 
     # Find latest prediction CSV inside THIS run's output directory.
-    # (recursive=True makes this resilient if you later nest outputs)
     list_of_files = glob.glob(os.path.join(run_output_dir, "**", "*.csv"), recursive=True)
     if not list_of_files:
         raise RuntimeError(f"[ERROR] No CSV outputs were found in: {run_output_dir}")
