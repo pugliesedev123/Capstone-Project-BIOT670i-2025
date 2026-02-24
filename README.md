@@ -1,18 +1,22 @@
 # Using Deep Learning to Identify Fossils of the Atlantic Coastal Plain
 
-In this project, we train neural networks to classify fossil images from across the Eastern United States, spanning the Cretaceous beds of New Jersey to the diverse coastal deposits of Maryland, the Carolinas, and Florida.  
+This project trains neural networks to classify fossil images from across the Eastern United States, spanning the Cretaceous beds of New Jersey to diverse coastal deposits of Maryland, the Carolinas, and Florida.
 
-We provide a Python toolkit for:
-- **Image preprocessing and augmentation** (crop, colourize, rotate, zoom, flips, etc.)
-- **ResNet-18, ResNet-34, ResNet-50, VGG16, and DenseNet121 training** with class imbalance handling
-- **Prediction** on new images with support for nearest-neighbor lookups on ResNet training examples  
+It provides a Python toolkit for:
+- **Image preprocessing and augmentation** (crop, colorize, rotate, zoom, flips, etc.)
+- **ResNet-18, ResNet-34, ResNet-50, VGG16, and DenseNet121 training** with basic class-imbalance handling
+- **Prediction** on new images to measure classifier performance and generate top-k guesses
 
 The goal is a practical framework for researchers and fossil enthusiasts alike.
 
-# Fossil Image Preprocessing & Training
+Portions of this work were completed as part of the University of Maryland Global Campus M.S. Biotechnology capstone. More information on project goals can be found in `Project_Description.pdf`.
 
-This repository contains scripts to preprocess fossil image datasets, train an image classifier, and run predictions on new fossil images or folders.  
-Each stage is seed-controlled for reproducibility.
+Portions of these results were also used to create the poster "<em>Analyzing the Impact of Increased Species Diversity on Machine Learning-Based Image Classification within the Megatoothed Sharks</em>" for the joint Mid-Atlantic and NorthEast (MANE) Geobiology Symposium at the Edelman Fossil Park and Museum on Friday, 27 February 2026.
+
+A copy of the poster can be found at `Megatoothed_Sharks_MANE_Presentation.pdf`.
+Image credits and licensing details can be found at: `Megatoothed_Sharks_Deep_Learning_Credit_Citation.pdf`.
+
+
 
 ## Installation
 
@@ -22,20 +26,22 @@ cd <your-repo-folder>
 
 # (Optional) create a virtual environment
 python -m venv venv
+
 # macOS/Linux
 source venv/bin/activate
 # Windows
 # venv\Scripts\activate
 
-# Install required libraries
 pip install torch torchvision tqdm pillow numpy psutil
 ```
 
-All other imports are from the Python standard library (`os`, `shutil`, `argparse`, etc.).
+All other imports are from the Python standard library (for example: `os`, `shutil`, `argparse`).
 
-## Dataset Layout
 
-Place images in **owner** and their sub-**taxon** folders:
+
+## Dataset layout
+
+Place images in **owner** folders, with subfolders that represent classes (taxa or minerals):
 
 ```
 data/train/
@@ -49,158 +55,286 @@ data/train/
     mineral-pyrite_nodule/
 ```
 
-Each `owner-*` folder contains multiple taxon or mineral folders.  
-Each taxon folder contains `.jpg`, `.jpeg`, or `.png` images.
+- Each `owner-*` folder contains one or more `taxon-*` or `mineral-*` subfolders.
+- Each class folder contains `.jpg`, `.jpeg`, `.png` images (and optionally `.heic` before conversion).
+
+Requests for sample formatted data can be made out to either [pugliesdev123@gmail.com](mailto:pugliesdev123@gmail.com) or [digsitedetective@gmail.com](mailto:digsitedetective@gmail.com).
+
+
+
+## Taxa config file (`taxa-config.txt`)
+
+Several scripts can optionally read a `taxa-config.txt` file to include/exclude classes.
+
+Recommended convention per line (one class per line):
+- `+taxon-exogyra_sp` include explicitly
+- `-taxon-sphenodiscus_sp` exclude explicitly
+- `taxon-mosasaurus_maximus` neutral (treated as “present” if discovered on disk)
+
+When flags are used:
+
+- `--exclude-classes`
+  - Any line starting with `-` is excluded.
+
+- `--include-config-classes-only`
+  - Only classes listed with `+` are included.
+  - Any discovered class not listed with `+` is excluded.
+
+If neither flag is set, the config file can still be used as a reference list, but discovered classes are included based on the folder tree.
+
+
 
 ## Utilities
 
 ### Convert HEIC images
 
-If your dataset includes `.heic` images (e.g., from iPhones), use `convert_heics.py`:
+If your dataset includes `.heic` images (e.g., from iPhones), use:
 
 ```bash
 python convert_heics.py --target-dir data/train
 ```
 
-This converts all `.heic` files under `data/train` into `.jpg` files.
+This converts all `.heic` files under the target directory into `.jpg` files (preserving the folder structure).
 
-### Get File List
-
-If you need a report on your dataset and clean it of empty taxon folders, use `get_file_list.py`:
+### Get a dataset report (and optionally remove empty class folders)
 
 ```bash
 python get_file_list.py
 ```
 
-### Update File Names
+Suggested output to document in the script and in the README (if applicable):
+- Total images per class
+- Total classes discovered
+- Empty folders found (and whether they were removed)
 
-If you need to update file names to match their taxon folder definition, use `update_file_name.py`:
+### Update file names to match their class folder
 
 ```bash
 python update_file_name.py
 ```
 
-### Generate a taxa-config File
+This is typically used to enforce consistent naming such as:
+`taxon-exogyra_sp/exogyra_sp_0001.jpg`
 
-If you wish to generate a taxa-config file that can modify which classes you seek to classify, use `taxa_for_config.py`:
+### Generate `taxa-config.txt` from your dataset
 
 ```bash
 python taxa_for_config.py
 ```
 
-This traverses all files in the training folder and returns a taxa-config.txt file that can be used in augmentation and training.
+This traverses the training folder and writes a `taxa-config.txt` file that can be used to:
+- Exclude rare/problem classes
+- Run experiments on a selected subset of classes
+- Enforce consistent class ordering
 
-## Preprocess and Augment Images
 
-Run the augmentation script to build a validation split and augmented data:
+
+## Preprocess and augment images
+
+Run the augmentation script to build a validation split and augmented training set:
 
 ```bash
 python augment_images.py
 ```
 
-This will:
-- Build `data/val/owner-combined` (validation set)  
-- Create `data/augmented/owner-combined` with augmented variants per image (configurable with `--aug-per-image`)  
+Default behavior:
+- Builds `data/val/owner-combined` (validation set)
+- Creates `data/augmented/owner-combined` (augmented training set)
+
+### Key behavior
+
+- Each class is split into train/validation, typically **80/20** (1/5 moved to validation).
+- Validation images are copied unchanged.
+- Training images are augmented using a mix of geometric and appearance transforms (rotation, scaling, flips, sharpness, grayscale, histogram equalization).
 
 ### Arguments
 
-The script accepts several arguments to control how preprocessing and augmentation are performed:
+- `--input-root` (default: `data/train`)
+  - Root folder containing `owner-*` subdirectories.
 
-- `--input-root` (default: `data/train`) Path to the root folder containing the **owner-** subdirectories. Each owner folder should contain one or more `taxon-*` or `mineral-*` subfolders with images.
-- `--val-root` (default: `data/val/owner-combined`) Path where the script will copy validation images. A new folder is created for each class, and 1/5 of the images from that class are stored here.  
-- `--aug-root` (default: `data/augmented/owner-combined`) Path where augmented training images will be saved.   Each class will have its own subfolder with augmented versions of the training images.  
-- `--aug-per-image` (default: `3`) Number of augmented samples to create for each original training image. Example: 100 training images with `--aug-per-image=3` produce 300 augmented images.  
-- `--seed` (default: `42`) Random seed for shuffling, splitting, and augmentation. Use the same seed to reproduce the same validation split and augmented dataset.  
-- `--console-print` Print extra details to console.
-- `--exclude-classes` Boolean to remove select classes marked with an '-' from taxa-config.txt.
-- `--include-config-classes-only` Boolean to include only classes in taxa-config.txt and start with a '+'.
-- `--threshold` Generate class balance by defining a threshold that will remove classes if they do not an image count that exceeds this number. Randomly excise images from classes that exceed this number until they are equal to the threshold.
-- `--disable-tf` Disable specific transformations for augmentation. The following transforms can be disabled by repeatedly calling the argument: rotate, scale, zoom, horizontalflip, verticalflip, grayscale, equalize, sharpen.
-- `--disable-ca` Disable specific class for augmentation (eg. --disable-ca exogyra_sp).
+- `--input-config` (default: `taxa-config.txt`)
+  - Taxa config file path.
+
+- `--val-root` (default: `data/val/owner-combined`)
+  - Output folder for validation images.
+
+- `--aug-root` (default: `data/augmented/owner-combined`)
+  - Output folder for augmented training images.
+
+- `--aug-per-image` (default: `3`)
+  - Number of augmented copies per original training image.
+
+- `--seed` (default: `42`)
+  - Seed used for shuffling, splitting, and augmentation.
+
+- `--console-print` (flag)
+  - Print extra details to the console.
+
+- `--exclude-classes` (flag)
+  - Exclude classes marked with `-` in `taxa-config.txt`.
+
+- `--include-config-classes-only` (flag)
+  - Include only classes marked with `+` in `taxa-config.txt`.
+
+- `--threshold` (integer)
+  - If set, balance classes to a cap:
+    - Drop classes with fewer than `threshold` images.
+    - Randomly downsample classes with more than `threshold` images to match the cap.
+
+- `--disable-tf` (repeatable; disables transforms)
+  - Supported values (example list): `rotate`, `scale`, `zoom`, `horizontalflip`, `verticalflip`, `grayscale`, `equalize`, `sharpen`
+  - Example:
+    ```bash
+    python augment_images.py --disable-tf grayscale --disable-tf equalize
+    ```
+
+- `--disable-ca` (repeatable; disables class augmentation)
+  - Disable augmentation for a specific class label (example):
+    ```bash
+    python augment_images.py --disable-ca taxon-exogyra_sp
+    ```
 
 ### Notes
 
-- Classes with fewer than **20 images** are skipped to avoid poor-quality splits.  
-- Validation images are copied unchanged, while training images are **augmented** using a mix of geometric and appearance transforms (rotation, scaling, flips, sharpness, grayscale, histogram equalization).  
-- Outputs are placed under the `--val-root` and `--aug-root` directories in a layout compatible with PyTorch’s `ImageFolder`.
+- Classes with fewer than **20 images** may be skipped to avoid low-quality splits.
+  - If this threshold is enforced in code, consider surfacing it as a named argument such as `--min-images` in a future update.
 
-## Train the Model
+
+
+## Train the model
 
 Train a classifier on your dataset:
 
 ```bash
-# Train on raw data (merges data/train/owner-* into data/augmented/owner-combined first)
+# Option A: train from raw data (expects training images under data/train/)
 python train_model.py
 
-# Train on prebuilt augmented data
+# Option B: train from a prebuilt augmented set (expects data/augmented/owner-combined/)
 python train_model.py --use-augmented
 ```
 
-What happens:
-- Owner folders are merged into **`data/augmented/owner-combined`** when `--use-augmented` is **not** set (sources read from `data/train/owner-*`)  
-- A validation split is created if missing: `data/val/owner-combined`  
-- Pretrained model is fine-tuned for your fossil taxa  
-- Class imbalance is addressed with **per-class loss weights**  
-- Model weights, class names, and a **feature embedding index** are saved in `models/`
+### What happens
+
+- If `--use-augmented` is NOT set:
+  - Owner folders under `data/train/owner-*` are merged into `data/augmented/owner-combined` before training.
+
+- If a validation set is missing:
+  - A split is created at `data/val/owner-combined`.
+
+- A pretrained model is fine-tuned for your classes.
+- Basic class imbalance is addressed with per-class loss weights.
+- Model artifacts are saved to `models/`.
 
 ### Arguments
 
-- `--use-augmented` (flag  If set, read training data from `data/augmented/owner-combined`. If not set, the script **builds** `data/augmented/owner-combined` by merging `data/train/owner-*` into that location before training.
-- `--console-print` (flag) If set, prints extra details to the console during setup and training.
-- `--use-pre-train` (default: `True`) Load ImageNet-pretrained weights for the selected backbone before training.
-- `--seed` (default: `42`) Controls shuffling, splits, and other randomness via a unified seed helper.
-- `--batch-size` (default: `16`) Training and validation batch size.
-- `--epochs` (default: `5`) Number of training epochs.
-- `--input-config` (default: `taxa-config.txt`) Path to the taxa config used to guide class inclusion and augmentation.
-- `--model-path` (default: `models/fossil_resnet18.pt`) Where to save the trained model weights.
-- `--index-path` (default: `models/train_index.pt`) Where to save the training **embedding index** (512-d features + labels + file paths).
-- `--model` (default: `resnet18`, choices: `resnet18`, `resnet34`, `resnet50`, `vgg16`, `densenet121`) Select the model architecture to train.
-- `--threshold` (integer) If set, cap each class at this image count. Randomly remove images from classes above the threshold and drop classes below it to balance the dataset.
-- `--exclude-classes` (flag) If set, remove any classes marked with `-` in the taxa config.
-- `--include-config-classes-only` (flag) If set, include only classes that appear in the taxa config and are marked with `+`.
+- `--use-augmented` (flag)
+  - If set, train from `data/augmented/owner-combined`.
+  - If not set, build `data/augmented/owner-combined` from `data/train/owner-*` first.
+
+- `--console-print` (flag)
+  - Print extra setup/training details.
+
+- `--use-pre-train` (default: `True`)
+  - Load ImageNet-pretrained weights for the selected backbone.
+
+- `--seed` (default: `42`)
+  - Controls shuffling/splits and other randomness via a unified seed helper.
+
+- `--batch-size` (default: `16`)
+  - Train/validation batch size.
+
+- `--epochs` (default: `5`)
+  - Number of training epochs.
+
+- `--input-config` (default: `taxa-config.txt`)
+  - Path to the taxa config used to guide class inclusion (and, if applicable, augmentation decisions).
+
+- `--model-path` (default: `models/fossil_resnet18.pt`)
+  - Where to save trained weights.
+
+- `--index-path` (default: `models/train_index.pt`)
+  - Where to save the optional “training embedding index” (features + labels + file paths).
+
+- `--model` (default: `resnet18`)
+  - Choices: `resnet18`, `resnet34`, `resnet50`, `vgg16`, `densenet121`
+
+- `--threshold` (integer)
+  - If set, cap each class at this image count (drops classes below the cap; downsamples classes above it).
+
+- `--exclude-classes` (flag)
+  - Remove classes marked with `-` in `taxa-config.txt`.
+
+- `--include-config-classes-only` (flag)
+  - Include only classes marked with `+` in `taxa-config.txt`.
+
+
 
 ## Outputs
 
-After preprocessing and training, you will have any one of the following depending on your runthrough
+After preprocessing and training, you should have some of the following (depending on which model you train):
 
-- `models/class_names.json` — list of class labels  
+- `models/class_names.json` — list of class labels in model output order
 
-- `models/fossil_resnet18.pt` — trained ResNet-18 weights 
-- `models/fossil_resnet34.pt` — trained ResNet-34 weights  
-- `models/fossil_resnet50.pt` — trained ResNet-50 weights  
-- `models/fossil_vgg16.pt` — trained VGG-16 weights  
-- `models/fossil_densenet121.pt` — trained DenseNet-121 weights  
+Model weights:
+- `models/fossil_resnet18.pt`
+- `models/fossil_resnet34.pt`
+- `models/fossil_resnet50.pt`
+- `models/fossil_vgg16.pt`
+- `models/fossil_densenet121.pt`
 
-- `models/train_index.pt` — (only compatible with ResNet models) embedding index of training images for nearest neighbors
+Optional index:
+- `models/train_index.pt` — embedding index of training images (feature vectors + labels + file paths)
 
-#### Seeds and Reproducibility
+### Seeds and reproducibility
 
-All scripts accept a `--seed` argument to make results more repeatable:
+All scripts accept a `--seed` argument:
 
 ```bash
-python train_model.py --seed 123
 python augment_images.py --seed 123
+python train_model.py --seed 123
 ```
 
 The seed affects:
-- Dataset shuffling and validation split  
-- Random data augmentations (rotations, flips, zoom, etc.)  
-- Torch model initialization  
+- Dataset shuffling and validation split
+- Random augmentations (rotations, flips, zoom, etc.)
+- Torch initialization and any other seeded randomness
 
-## Predict on New Images or Folders
 
-After training, classify new fossils using `predict_image.py`.
+
+## Predict on new images or folders
+
+After training, classify new fossils using `predict_image.py`:
+
+```bash
+python predict_image.py --example-dir example_images
+```
 
 ### Arguments
 
-- `--example-dir` **(required)** Path to the folder with example images. Processed recursively.
-- `--console-print` (flag) Print extra details to the console.
-- `--top-predictions` (default: `3`) How many top guesses to record for each image.
-- `--neighbors` (default: `3`) How many closest training images to record.
-- `--model-path` (default: `models/fossil_resnet18.pt`) Path to the trained model weights file.
-- `--class-names` (default: `models/class_names.json`) Path to the `class_names.json` file.
-- `--index-path` (default: `blank.file`) Path to the saved training feature index.
-- `--output-dir` (default: `output`) Folder where the CSV will be saved.
+- `--example-dir` (required)
+  - Folder with images to predict (processed recursively).
+
+- `--console-print` (flag)
+  - Print extra details.
+
+- `--top-predictions` (default: `3`)
+  - How many top classes to record per image.
+
+- `--neighbors` (default: `3`)
+  - How many nearest training images to record **if** an index is provided.
+
+- `--model-path` (default: `models/fossil_resnet18.pt`)
+  - Path to trained weights.
+
+- `--class-names` (default: `models/class_names.json`)
+  - Path to class label list.
+
+- `--index-path` (default: `blank.file`)
+  - Path to a saved training embedding index.
+  - If this file does not exist (or is intentionally set to a dummy path), neighbor search is skipped and only top-k predictions are produced.
+
+- `--output-dir` (default: `output`)
+  - Directory where the timestamped CSV will be written.
 
 ### Example console output
 
@@ -216,40 +350,34 @@ example_images/bivalve.png
   3. Exogyra costata (12.77%)
 ```
 
-The script also writes predictions results to a timestamped CSV in the specified `--output-dir`.
 
-### Why nearest neighbors matter
 
-Alongside top class predictions, the script can also show **nearest neighbors** from the training dataset based on feature similarity (for ResNet models only). This helps you:
-- See which training fossils most influenced the model’s decision  
-- Spot potential misclassifications (if the nearest examples look wrong)  
-- Build confidence in the prediction by comparing to actual known fossils  
+## Recommended workflow
 
-## Recommended Workflow
+1. Convert HEIC or PNG photos (if any) to JPG > `convert_heics.py`
+2. Generate `taxa-config.txt` > `taxa_for_config.py`
+3. Augment dataset + build validation split > `augment_images.py`
+4. Train model > `train_model.py`
+5. Predict on new images > `predict_image.py`
 
-After building your training set, run scripts in the following order for best results:
 
-1. **Convert HEIC photos (if any) > `convert_heics.py`**  
-   Standardize image formats so everything is usable by the training scripts.  
-2. **Generate a taxa-config.txt file > `taxa_for_config.py`**  
-   Generate an easily modified taxa-config file which can modify which classes you wish to use.
-3. **Augment dataset and build validation split > `augment_images.py`**  
-   Expand training data with transformations and create a proper validation set.  
-4. **Train model > `train_model.py`**  
-   Fine-tune a ResNet-18, saving weights, class labels, and training embeddings.  
-5. **Predict on new or example fossils > `predict_image.py`**  
-   Run the trained model on fresh images to get top predictions and closest training examples.
 
-### Running all Scripts
+## Run all scripts with a single command
 
-`run_with_summary.py` exists in the /util/ folder to assist with organized script executions. In this script, `run_with_summary.py`will excute `augment_images.py`, `train_model.py`, and `predict_image.py`. By default, `run_with_summary.py` run inside of this script will augment images (creating 3 augmented copies) using /data/train/ as the base folder. `train_model.py` will accept this output and train a ResNet-18 classifier. Predictions will then be generated as part of `predict_image.py` using a default /example/ folder with sub-categories inside that correspond to a unique taxa.
+A helper exists at `util/run_with_summary.py` to run:
+- augmentation (`augment_images.py`)
+- training (`train_model.py`)
+- prediction (`predict_image.py`)
 
-This script can be quickly modified by changing the default script arguments at the top of the file. These script arguments, system information, and taxa information from the entire execution of `run_with_summary.py` will be pushed to a summary file. This summary file's name corresponds to the output file that is generated by `predict_image.py`.
+The script writes a summary file that captures:
+- script arguments used for each step
+- basic system information
+- taxa information discovered/used for the run
+- the output CSV name produced by prediction
 
-It is recommend that for each execution of `run_with_summary.py`, you record the following information:
-
-- **The specific taxa-config.txt you might have used to train the classifier.**
-- **Data/augmentation/owner-augmented (with your augmented training images)**
-- **Data/val/owner-augmented (with your validation training images)**
-- **The custom predicition folder you ran your script against.**
-- **The output file generated by `predict_image.py` and the corresponding summary file.**
+Recommended bookkeeping per run:
+- the exact `taxa-config.txt` used
+- `data/augmented/owner-combined/` (augmented training images)
+- `data/val/owner-combined/` (validation images)
+- the example/prediction folder used
+- the prediction CSV and its corresponding summary file
