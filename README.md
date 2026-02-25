@@ -55,7 +55,7 @@ data/train/
 ```
 
 - Each `owner-*` folder contains one or more `taxon-*` subfolders.
-- Each class folder contains `.jpg`, `.jpeg`, `.png` images (and optionally `.heic` before conversion).
+- Each class folder contains `.jpg`, `.jpeg`, `.png` images (and optionally `.heic` or `.gif` before conversion).
 
 Requests for sample formatted data can be made out to either [pugliesdev123@gmail.com](mailto:pugliesdev123@gmail.com) or [digsitedetective@gmail.com](mailto:digsitedetective@gmail.com).
 
@@ -85,15 +85,15 @@ If neither flag is set, the config file can still be used as a reference list, b
 
 ## Utilities
 
-### Convert HEIC images
+### Convert HEIC or GIF images
 
-If your dataset includes `.heic` images (e.g., from iPhones), use:
+If your dataset includes `.heic` or `.gif` images (e.g., from iPhones), use:
 
 ```bash
-python convert_heics.py --target-dir data/train
+python converter_to_jpg.py --target-dir data/train --file-type all
 ```
 
-This converts all `.heic` files under the target directory into `.jpg` files (preserving the folder structure).
+This converts all image files under the target directory into `.jpg` files (preserving the folder structure).
 
 ### Get a dataset report (and optionally remove empty class folders)
 
