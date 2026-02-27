@@ -13,7 +13,7 @@ Portions of this work were completed as part of the University of Maryland Globa
 
 Portions of these results were also used to create the poster "<em>Analyzing the Impact of Increased Species Diversity on Machine Learning-Based Image Classification within the Megatoothed Sharks</em>" for the joint Mid-Atlantic and NorthEast (MANE) Geobiology Symposium at the Edelman Fossil Park and Museum on Friday, 27 February 2026.
 
-A copy of the poster can be found at `Megatoothed_Sharks_MANE_Presentation.pdf`.
+A copy of the poster can be found at `Megatoothed_Sharks_MANE_Presentation.pdf` and assosciate scripts are found in `Megatoothed_Sharks_MANE_Presentation.zip`.
 Image credits and licensing details can be found at: `Megatoothed_Sharks_Deep_Learning_Credit_Citation.pdf`.
 
 
